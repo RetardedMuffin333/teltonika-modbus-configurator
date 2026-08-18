@@ -62,8 +62,17 @@ class TcpServerSettings:
 
 
 @dataclass(slots=True)
+class ImportedUciState:
+    """Original RutOS packages used as the safe baseline for live round trips."""
+
+    modbus_client: str
+    modbus_server: str
+
+
+@dataclass(slots=True)
 class Project:
     connections: list[SerialConnection] = field(default_factory=list)
     devices: list[Device] = field(default_factory=list)
     mappings: list[ServerMapping] = field(default_factory=list)
     tcp_server: TcpServerSettings = field(default_factory=TcpServerSettings)
+    source_uci: ImportedUciState | None = None
