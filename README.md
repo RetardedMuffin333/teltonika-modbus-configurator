@@ -6,31 +6,36 @@ The goal is to configure large Modbus installations without manually creating hu
 
 A device can be a thermostat, chiller, AHU, meter, pump, VFD, or any other Modbus RTU device.
 
-## v1 scope
+## v0.1.0 — proven baseline
 
-The first version focuses on one proven workflow:
+Version `0.1.0` freezes the first end-to-end workflow that was successfully tested on a real Teltonika TRB145 running RutOS 7.24.2:
 
 ```text
 Modbus RTU devices
         ↓ RS485
-Teltonika TRB / RutOS Modbus Client
+Teltonika TRB145 / RutOS Modbus Client
         ↓ local value mappings
 RutOS Modbus TCP Server
         ↓
 atvise Connect (one Modbus TCP connection)
 ```
 
-Current capabilities:
+The release acceptance test generated and deployed a fresh batch of 23 Modbus RTU devices, each with three requests, plus the corresponding Modbus TCP Server mappings. RutOS accepted the generated UCI, the entries appeared correctly in the WebUI, polling worked, and the resulting values were exposed through the single Modbus TCP Server connection.
+
+### Current capabilities
 
 - Serial Modbus connections and RTU devices
 - Arbitrary FC01–FC04 read requests
 - RutOS Modbus TCP Server mappings
 - Automatic internal UCI IDs and `tag_id` relationships
 - Import existing live RutOS Modbus configuration over SSH
-- YAML save/load
+- Exact no-op round-trip for live imports: import → no edits → zero diff
+- Safe append-only generation for imported live projects
+- YAML save/load, including imported UCI provenance
 - Reusable device/request templates
 - Bulk device generation with sequential or explicit Slave IDs
 - Automatic next-free TCP register allocation
+- Teltonika TCP register validation: `1025..65536`
 - Collision validation for devices, Slave IDs, symbol names and TCP register ranges
 - Exact RutOS UCI preview
 - Live unified diff against a TRB
@@ -41,14 +46,27 @@ Current capabilities:
 
 Modbus TCP Client devices and additional unverified register/symbol types are intentionally deferred to a later version.
 
-## Desktop GUI
+## Installation
 
-Install the project and start it with:
+Python 3.11 or newer is required.
 
-```bash
-pip install -e .
-tmc-gui
+On Windows, from the repository directory:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e .
 ```
+
+Start the GUI with:
+
+```powershell
+.\.venv\Scripts\tmc-gui.exe
+```
+
+PowerShell activation is optional; the commands above work even when `Activate.ps1` is blocked by execution policy.
+
+## Desktop GUI
 
 The GUI supports:
 
@@ -59,6 +77,7 @@ The GUI supports:
 - TCP Server mappings editor
 - TCP Server settings
 - Bulk Device Generator using any existing device as a template
+- Sequential or explicit/non-sequential Slave IDs
 - Automatic next-free TCP mapping proposals
 - Validation
 - Generated UCI preview
@@ -67,35 +86,81 @@ The GUI supports:
 - Rollback to a saved remote snapshot
 - Export of atvise Connect `.Symbol` files
 
+## Recommended live workflow
+
+For an existing TRB, use this sequence:
+
+```text
+Import live TRB
+      ↓
+Validate
+      ↓
+Make additions in the GUI / Bulk Generator
+      ↓
+Preview live diff
+      ↓
+Verify only intended changes are present
+      ↓
+Apply to live TRB
+      ↓
+Fresh import
+      ↓
+Preview live diff again
+```
+
+For a successful deployment, the final fresh import should report that the live configuration already matches the generated configuration.
+
+### Round-trip safety
+
+Imported projects preserve the original `modbus_client` and `modbus_server` UCI as provenance. With no edits, generation returns the original configuration exactly, preventing accidental UCI ID renumbering or broken `tag_id` references.
+
+For v0.1.0, imported projects are intentionally append-only: existing imported connections, devices, requests, mappings and TCP Server settings are protected from silent reconstruction. New entries receive IDs above the existing UCI range.
+
+## Bulk generation
+
+The Bulk Device Generator can clone any existing device as a template. A template may contain multiple requests and multiple TCP mappings.
+
+The generator supports both simple sequential Slave IDs and real-world non-sequential address lists. It checks for:
+
+- duplicate device names;
+- duplicate Slave IDs on the same serial connection;
+- duplicate mapping/symbol names;
+- overlapping TCP register ranges;
+- TCP registers outside the Teltonika-supported `1025..65536` range.
+
+Loading an existing device template automatically proposes the next free register for each related mapping group.
+
 ## atvise Connect symbol export
 
-The exporter uses the same TCP mappings that are generated for RutOS, so Connect does not need to be configured manually a second time.
+The exporter uses the same TCP mappings generated for RutOS, so Connect does not need to be configured manually a second time.
 
 A project containing mappings such as:
 
 ```text
-Joy01       input_register   1025
-Joy01_SetP  input_register   1050
-HR_Joy01    holding_register 1080
+Joy01_Temp   input_register   1025
+Joy01_SetP   input_register   1050
+Joy01_OnOff  holding_register 1080
 ```
 
 produces:
 
 ```text
 []
-sym-Joy01=IR1025,
+sym-Joy01_Temp=IR1025,
 sym-Joy01_SetP=IR1050,
-sym-HR_Joy01=HR1080,
+sym-Joy01_OnOff=HR1080,
 ```
 
-This matches the tested atvise Connect symbol-file structure supplied during development.
+The normal GUI export includes all mappings, including disabled mappings. A separate enabled-only export is available when a runtime-only symbol list is preferred.
 
-Only enabled mappings are exported by default. v1 supports the verified `IR` and `HR` forms only; unsupported register types fail explicitly instead of guessing Connect syntax.
+v0.1.0 supports the verified `IR` and `HR` forms only; unsupported register types fail explicitly instead of guessing Connect syntax.
 
 From the GUI use:
 
 ```text
-Export → atvise Connect Symbol file...
+Export
+├── atvise Connect Symbol file (all mappings)...
+└── atvise Connect Symbol file (enabled only)...
 ```
 
 From the CLI:
@@ -128,19 +193,6 @@ tag_id '2.3'
 
 back into explicit project relationships between devices, requests and TCP mappings.
 
-## Bulk generation
-
-The GUI Bulk Device Generator can clone any existing device as a template. For example, a device with three requests can be expanded into a whole line of devices while assigning sequential Slave IDs and separate TCP register blocks.
-
-The generator checks for:
-
-- duplicate device names;
-- duplicate Slave IDs on the same serial connection;
-- duplicate mapping/symbol names;
-- overlapping TCP register ranges.
-
-Loading an existing device template automatically proposes the next free register for each related mapping group.
-
 ## CLI
 
 Local operations:
@@ -172,16 +224,18 @@ tmc rollback <snapshot> --host 10.33.22.1
 
 Passwords are prompted interactively and are not stored in YAML. SSH keys are also supported.
 
-## Why UCI?
+## RutOS UCI
 
-RutOS stores the live Modbus configuration in packages such as:
+RutOS stores the Modbus configuration in packages such as:
 
-- `/etc/config/modbus_client`
-- `/etc/config/modbus_server`
+```text
+/etc/config/modbus_client
+/etc/config/modbus_server
+```
 
-A real TRB145 test confirmed that generated UCI sections are accepted by RutOS, appear correctly in the WebUI, and can be linked through the Modbus TCP Server using generated `tag_id` references.
+The configurator generates the UCI relationships used by RutOS, including references between Modbus Client requests and Modbus TCP Server tags.
 
-## Safety principle
+## Deployment safety
 
 The configurator does not blindly overwrite a live TRB. Deployment follows:
 
@@ -201,6 +255,37 @@ apply UCI + commit + restart
 keep rollback snapshot
 ```
 
+Always review the live diff before applying a fresh project that is intended to replace an existing configuration.
+
+## Tested v0.1.0 scenario
+
+The release was validated with a real 23-device RTU batch using a mixture of sequential and non-sequential Slave IDs. Each device contained three read requests:
+
+```text
+Temperature  → FC04 / register 515
+Setpoint     → FC04 / register 554
+On/Off       → FC03 / register 262
+```
+
+The TCP Server exposed three separate blocks:
+
+```text
+Temperature  → IR1025...
+Setpoint     → IR1050...
+On/Off       → HR1080...
+```
+
+The exact addresses and Device ID are project-specific; the important result is that a completely fresh project generated by the configurator was successfully pushed to the TRB145 and worked live.
+
 ## Next version
 
-Planned later work includes Modbus TCP Client devices, additional RutOS Modbus options, write-oriented request models, verified Coil/Discrete Input symbol export, reusable device-template libraries and installer/packaging improvements.
+Planned later work includes:
+
+- Modbus TCP Client devices alongside RTU devices
+- more RutOS Modbus options and request types
+- verified Coil / Discrete Input atvise symbol export
+- reusable device-template libraries
+- installer / packaging improvements
+- broader edit/update support for already-imported live entities
+
+See `CHANGELOG.md` for the frozen v0.1.0 feature set.
