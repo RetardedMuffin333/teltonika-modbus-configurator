@@ -8,6 +8,7 @@ import shlex
 from .models import (
     Device,
     FunctionCode,
+    ImportedUciState,
     Project,
     Request,
     SerialConnection,
@@ -81,13 +82,22 @@ def _decode_data_type(value: str) -> tuple[str, str]:
     raise ValueError(f"Unsupported RutOS request data_type: {value}")
 
 
-def import_project(modbus_client: str, modbus_server: str) -> Project:
+def import_project(
+    modbus_client: str,
+    modbus_server: str,
+    *,
+    attach_source: bool = True,
+) -> Project:
     """Convert live/exported RutOS Modbus UCI packages to a Project.
 
     Empty RutOS TCP-client stubs are tolerated because RutOS may keep them in
     `modbus_client`. Active TCP-client devices are deliberately rejected until
     their full UCI schema is modeled; silently dropping them would make a later
     round-trip/apply unsafe.
+
+    When ``attach_source`` is true, the exact source packages are retained on
+    the Project. The generator uses that provenance for lossless live round
+    trips and append-only changes.
     """
     client_sections = parse_uci(modbus_client)
     server_sections = parse_uci(modbus_server)
@@ -122,7 +132,6 @@ def import_project(modbus_client: str, modbus_server: str) -> Project:
             parent_id = section.section_type.removeprefix("request_")
             request_sections_by_device.setdefault(parent_id, []).append(section)
 
-    # Do not silently lose a configured Modbus TCP Client device.
     tcp_with_requests = sorted(
         tcp_id for tcp_id in tcp_client_ids if request_sections_by_device.get(tcp_id)
     )
@@ -238,4 +247,9 @@ def import_project(modbus_client: str, modbus_server: str) -> Project:
         devices=devices,
         mappings=mappings,
         tcp_server=tcp_server,
+        source_uci=(
+            ImportedUciState(modbus_client=modbus_client, modbus_server=modbus_server)
+            if attach_source
+            else None
+        ),
     )
