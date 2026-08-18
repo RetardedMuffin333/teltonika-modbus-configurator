@@ -22,6 +22,31 @@ The project is intentionally **device-agnostic**: a device can be a thermostat, 
 - Remote diff preview
 - Guarded SSH apply with local + remote backup
 - Rollback to a previous remote snapshot
+- Tkinter desktop editor for YAML/live projects, connections, devices, requests, mappings, TCP Server settings, validation and UCI preview
+
+## Desktop GUI
+
+The first desktop UI is deliberately a thin layer over the tested core. It does not maintain a separate configuration format; edits are made directly to the same `Project` model used by the CLI.
+
+Install the project and start it with:
+
+```bash
+pip install -e .
+tmc-gui
+```
+
+The GUI currently supports:
+
+- new/open/save YAML projects;
+- import the live `modbus_client` and `modbus_server` configuration from a TRB over SSH;
+- add/edit/delete serial connections;
+- add/edit/delete devices and their Modbus requests;
+- add/edit/delete Modbus TCP Server mappings;
+- edit TCP Server port, Device ID, enabled state and persistent connection;
+- validate the project;
+- preview the exact generated RutOS UCI before any deployment.
+
+Live **apply/rollback from the GUI is intentionally not enabled yet**. The CLI remains the guarded deployment path until the GUI has a proper diff/confirmation/backup workflow.
 
 ## Why UCI?
 
@@ -34,7 +59,7 @@ A working TRB145 test confirmed that generated UCI sections are accepted by RutO
 
 ## Import an existing TRB
 
-The configurator can now start from an already-configured device instead of requiring a handwritten YAML project.
+The configurator can start from an already-configured device instead of requiring a handwritten YAML project.
 
 Read the live configuration over SSH:
 
@@ -192,14 +217,21 @@ SSH passwords are prompted interactively and are not stored in YAML. SSH keys ca
 
 ### Phase 4 — GUI
 
-- [ ] Windows desktop application
-- [ ] Open live TRB / YAML project
-- [ ] Connections editor
-- [ ] Devices editor
-- [ ] Requests editor
-- [ ] TCP mapping editor
-- [ ] Validation panel
-- [ ] Preview / Apply / Rollback workflow
+- [x] Windows desktop application foundation
+- [x] Open live TRB / YAML project
+- [x] Connections editor
+- [x] Devices editor
+- [x] Requests editor
+- [x] TCP mapping editor
+- [x] Validation / UCI preview
+- [ ] GUI diff / guarded Apply / Rollback workflow
+- [ ] Bulk/template editor UI
+
+### Phase 5 — Additional transports / writes
+
+- [ ] Modbus TCP Client devices
+- [ ] Write-oriented request/mapping model
+- [ ] Preserve and edit additional RutOS Modbus options
 
 ## Safety principle
 
@@ -207,4 +239,4 @@ The configurator should never blindly overwrite a live TRB configuration. Deploy
 
 ## Status
 
-The CLI can now round-trip between a live RutOS Modbus configuration and the generic YAML project model. The next major milestone is a GUI on top of this core, plus support for additional Modbus connection types and write-oriented workflows.
+The CLI can round-trip between a live RutOS Modbus configuration and the generic YAML project model. A first desktop editor now sits on top of that same core. The next GUI milestone is guarded live diff/apply/rollback; Modbus TCP Client support will be added once a populated real RutOS TCP-client UCI example is available.
