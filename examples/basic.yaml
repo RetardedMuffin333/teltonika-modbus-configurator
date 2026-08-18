@@ -1,0 +1,31 @@
+connections:
+  - name: VeterinaTEST
+    type: serial
+    device: /dev/rs485
+    baudrate: 19200
+    databits: 8
+    parity: none
+    stopbits: 2
+
+devices:
+  - name: TEST01
+    connection: VeterinaTEST
+    slave_id: 24
+    period: 10
+    timeout: 1
+    enabled: false
+    requests:
+      - name: IR_TEST
+        function: 4
+        register: 515
+        count: 1
+        data_type: int16
+        byte_order: high_byte_first
+
+mappings:
+  - name: TEST01_IR
+    device: TEST01
+    request: IR_TEST
+    register_type: input_register
+    register: 1200
+    enabled: false
