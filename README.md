@@ -4,33 +4,66 @@ A configuration tool for Teltonika RutOS Modbus deployments.
 
 The goal is to make large Modbus configurations manageable without manually creating hundreds of entries in the RutOS WebUI.
 
-## Scope
+The project is intentionally **device-agnostic**: a device can be a thermostat, chiller, AHU, meter, pump, VFD, or any other Modbus device.
 
-The project is intentionally **device-agnostic**. A configured device can be a thermostat, chiller, AHU, meter, pump, VFD, or any other Modbus device.
+## Current capabilities
 
-The core model supports:
-
-- Serial Modbus connections
-- Modbus RTU devices
-- Modbus requests
+- Serial Modbus connections and RTU devices
+- Arbitrary Modbus read requests
 - RutOS Modbus TCP Server mappings
-- Internal `tag_id` relationship generation
-- Validation before deployment
-- UCI export generation
-- Reusable device/request templates
-- Bulk device generation
-- SSH live preview / apply / rollback
-- Later: Modbus TCP Client devices
-- Later: Windows GUI
+- Automatic internal IDs and `tag_id` relationships
+- Reusable request/device templates
+- Bulk generation with sequential or explicit Slave IDs
+- Sequential TCP register allocation
+- YAML validation
+- RutOS UCI generation
+- Import existing RutOS `modbus_client` / `modbus_server` UCI back to YAML
+- Read a live TRB configuration over SSH and convert it to editable YAML
+- Remote diff preview
+- Guarded SSH apply with local + remote backup
+- Rollback to a previous remote snapshot
 
 ## Why UCI?
 
-RutOS stores the live Modbus configuration in UCI packages such as:
+RutOS stores the live Modbus configuration in packages such as:
 
 - `/etc/config/modbus_client`
 - `/etc/config/modbus_server`
 
-A working test confirmed that generated UCI sections can be imported into a TRB145 and are then recognized correctly by the RutOS WebUI.
+A working TRB145 test confirmed that generated UCI sections are accepted by RutOS and appear correctly in the WebUI.
+
+## Import an existing TRB
+
+The configurator can now start from an already-configured device instead of requiring a handwritten YAML project.
+
+Read the live configuration over SSH:
+
+```bash
+tmc import-live --host 10.33.22.1 -o imported.yaml
+```
+
+Or convert previously exported UCI files:
+
+```bash
+tmc import-uci modbus_client.txt modbus_server.txt -o imported.yaml
+```
+
+The importer resolves RutOS internal relationships such as:
+
+```text
+rtu_server '2'
+request_2 '3'
+tag_id '2.3'
+```
+
+back into explicit project relationships:
+
+```yaml
+device: TEST01
+request: IR_TEST
+```
+
+TCP Server settings such as port and Device ID are also preserved in the project model.
 
 ## Bulk templates
 
@@ -44,6 +77,10 @@ connections:
     databits: 8
     parity: none
     stopbits: 2
+
+tcp_server:
+  port: 502
+  device_id: 101
 
 templates:
   room_controller:
@@ -80,9 +117,7 @@ device_groups:
     slave_start: 1
 ```
 
-This expands to `Room01` through `Room20`, Slave IDs 1 through 20, with sequential TCP mappings starting at the configured register ranges.
-
-For installations with non-sequential addresses, `slave_ids` can be supplied explicitly:
+For non-sequential addresses, use an explicit list:
 
 ```yaml
 device_groups:
@@ -95,55 +130,46 @@ device_groups:
 
 ## CLI
 
-Validate and preview locally:
+Local operations:
 
 ```bash
-tmc validate examples/bulk_devices.yaml
-tmc preview examples/bulk_devices.yaml
-tmc export examples/bulk_devices.yaml -o output
+tmc validate project.yaml
+tmc preview project.yaml
+tmc export project.yaml -o output
 ```
 
-Compare a generated project with the live TRB without writing anything:
+Compare against a live TRB without writing anything:
 
 ```bash
-tmc remote-preview examples/bulk_devices.yaml --host 10.33.22.1
+tmc remote-preview project.yaml --host 10.33.22.1
 ```
 
-Apply only after reviewing the diff:
+Apply after reviewing the diff:
 
 ```bash
-tmc apply examples/bulk_devices.yaml --host 10.33.22.1
+tmc apply project.yaml --host 10.33.22.1
 ```
 
-`apply` performs the safety sequence automatically:
+`apply` reads the live configuration, prints a unified diff, asks for explicit confirmation, creates local and remote backups, imports and validates the generated UCI, commits it, and restarts the Modbus services.
 
-1. reads the live `modbus_client` and `modbus_server` UCI exports;
-2. prints a unified diff;
-3. requires explicit confirmation;
-4. stores a local backup under `backups/<UTC timestamp>/`;
-5. creates a remote snapshot under `/root/tmc-backups/<UTC timestamp>/`;
-6. imports and validates the generated UCI before commit;
-7. commits and restarts the Modbus services.
-
-Rollback a snapshot with:
+Rollback:
 
 ```bash
 tmc rollback 20260818T090000Z --host 10.33.22.1
 ```
 
-SSH passwords are prompted interactively and are not stored in project YAML. SSH keys can be supplied with `--key`. Unknown host keys are rejected unless `--trust-new-host` is explicitly supplied.
+SSH passwords are prompted interactively and are not stored in YAML. SSH keys can be supplied with `--key`. Unknown host keys are rejected unless `--trust-new-host` is explicitly supplied.
 
 ## Development plan
 
 ### Phase 1 — Core
 
-- [x] Define repository structure
 - [x] YAML project model
-- [ ] UCI parser
+- [x] UCI parser/importer
 - [x] UCI generator
 - [x] `tag_id` relationship generation
 - [x] Validation
-- [x] CLI preview/export
+- [x] CLI preview/export/import
 - [x] Unit tests
 
 ### Phase 2 — Deployment
@@ -167,6 +193,7 @@ SSH passwords are prompted interactively and are not stored in project YAML. SSH
 ### Phase 4 — GUI
 
 - [ ] Windows desktop application
+- [ ] Open live TRB / YAML project
 - [ ] Connections editor
 - [ ] Devices editor
 - [ ] Requests editor
@@ -176,16 +203,8 @@ SSH passwords are prompted interactively and are not stored in project YAML. SSH
 
 ## Safety principle
 
-The configurator should never blindly overwrite a live TRB configuration. Deployment follows:
-
-1. Read live configuration.
-2. Back it up locally and remotely.
-3. Generate proposed configuration.
-4. Validate references and address conflicts.
-5. Show a diff/preview.
-6. Apply only after explicit confirmation.
-7. Keep a rollback snapshot.
+The configurator should never blindly overwrite a live TRB configuration. Deployment follows: read live config → back up → generate → validate → diff → explicit confirmation → apply → keep rollback snapshot.
 
 ## Status
 
-Early development. The first successful proof-of-concept generated a disabled RTU device and a linked Modbus TCP Server mapping and applied both to a TRB145 via UCI. The project now supports reusable templates, bulk device groups, and a guarded SSH deployment workflow.
+The CLI can now round-trip between a live RutOS Modbus configuration and the generic YAML project model. The next major milestone is a GUI on top of this core, plus support for additional Modbus connection types and write-oriented workflows.

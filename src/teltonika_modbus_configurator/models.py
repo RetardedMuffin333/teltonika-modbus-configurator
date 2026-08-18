@@ -54,7 +54,16 @@ class ServerMapping:
 
 
 @dataclass(slots=True)
+class TcpServerSettings:
+    port: int = 502
+    device_id: int = 101
+    enabled: bool = True
+    keep_connection: bool = True
+
+
+@dataclass(slots=True)
 class Project:
     connections: list[SerialConnection] = field(default_factory=list)
     devices: list[Device] = field(default_factory=list)
     mappings: list[ServerMapping] = field(default_factory=list)
+    tcp_server: TcpServerSettings = field(default_factory=TcpServerSettings)

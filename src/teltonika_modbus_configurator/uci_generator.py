@@ -40,12 +40,7 @@ def _request_data_type(request: Request) -> str:
     )
 
 
-def generate_uci(
-    project: Project,
-    *,
-    tcp_port: int = 502,
-    tcp_device_id: int = 101,
-) -> GeneratedUci:
+def generate_uci(project: Project) -> GeneratedUci:
     messages = validate_project(project)
     raise_for_errors(messages)
 
@@ -58,8 +53,6 @@ def generate_uci(
         "",
     ]
 
-    # RutOS uses numeric section IDs. Keep a single monotonically increasing
-    # allocator for connection, device, and request sections in modbus_client.
     next_id = 1
     connection_ids: dict[str, int] = {}
     device_ids: dict[str, int] = {}
@@ -125,18 +118,19 @@ def generate_uci(
                 ]
             )
 
+    tcp = project.tcp_server
     server: list[str] = [
         "package modbus_server",
         "",
         "config modbus 'modbus'",
-        "\toption keepconn '1'",
+        f"\toption keepconn {_q(_on(tcp.keep_connection))}",
         "\toption timeout '0'",
-        f"\toption port {_q(tcp_port)}",
+        f"\toption port {_q(tcp.port)}",
         "\toption md_data_type '0'",
         "\toption clientregs '0'",
         "\toption broadcasts '0'",
-        f"\toption device_id {_q(tcp_device_id)}",
-        "\toption enabled '1'",
+        f"\toption device_id {_q(tcp.device_id)}",
+        f"\toption enabled {_q(_on(tcp.enabled))}",
         "",
     ]
 
