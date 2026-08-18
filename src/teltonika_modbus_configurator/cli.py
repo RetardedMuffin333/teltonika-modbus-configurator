@@ -6,6 +6,7 @@ import argparse
 from getpass import getpass
 from pathlib import Path
 
+from .atvise_symbols import export_atvise_symbols
 from .deploy import (
     SshSession,
     apply_generated,
@@ -85,6 +86,18 @@ def main() -> int:
     export_cmd.add_argument("project", type=Path)
     export_cmd.add_argument("--output", "-o", type=Path, default=Path("output"))
 
+    symbols_cmd = sub.add_parser(
+        "export-symbols",
+        help="Export enabled TCP mappings as an atvise Connect .Symbol file",
+    )
+    symbols_cmd.add_argument("project", type=Path)
+    symbols_cmd.add_argument("--output", "-o", type=Path, default=Path("Teltonika_Modbus.Symbol"))
+    symbols_cmd.add_argument(
+        "--include-disabled",
+        action="store_true",
+        help="Also include disabled TCP mappings",
+    )
+
     import_uci_cmd = sub.add_parser(
         "import-uci", help="Convert exported modbus_client/modbus_server UCI files to YAML"
     )
@@ -146,6 +159,14 @@ def main() -> int:
 
     if not _print_validation(project):
         return 1
+
+    if args.command == "export-symbols":
+        text = export_atvise_symbols(project, include_disabled=args.include_disabled)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(text, encoding="utf-8", newline="\n")
+        count = len(project.mappings) if args.include_disabled else sum(1 for m in project.mappings if m.enabled)
+        print(f"Wrote {count} atvise symbol(s): {args.output}")
+        return 0
 
     generated = generate_uci(project)
 

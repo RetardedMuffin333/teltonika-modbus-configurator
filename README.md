@@ -1,32 +1,47 @@
 # Teltonika Modbus Configurator
 
-A configuration tool for Teltonika RutOS Modbus deployments.
+A device-agnostic configuration tool for Teltonika RutOS Modbus deployments.
 
-The goal is to make large Modbus configurations manageable without manually creating hundreds of entries in the RutOS WebUI.
+The goal is to configure large Modbus installations without manually creating hundreds of entries in the RutOS WebUI or duplicating the same TCP register list in atvise Connect.
 
-The project is intentionally **device-agnostic**: a device can be a thermostat, chiller, AHU, meter, pump, VFD, or any other Modbus device.
+A device can be a thermostat, chiller, AHU, meter, pump, VFD, or any other Modbus RTU device.
 
-## Current capabilities
+## v1 scope
+
+The first version focuses on one proven workflow:
+
+```text
+Modbus RTU devices
+        ↓ RS485
+Teltonika TRB / RutOS Modbus Client
+        ↓ local value mappings
+RutOS Modbus TCP Server
+        ↓
+atvise Connect (one Modbus TCP connection)
+```
+
+Current capabilities:
 
 - Serial Modbus connections and RTU devices
-- Arbitrary Modbus read requests
+- Arbitrary FC01–FC04 read requests
 - RutOS Modbus TCP Server mappings
-- Automatic internal IDs and `tag_id` relationships
-- Reusable request/device templates
-- Bulk generation with sequential or explicit Slave IDs
-- Sequential TCP register allocation
-- YAML validation
-- RutOS UCI generation
-- Import existing RutOS `modbus_client` / `modbus_server` UCI back to YAML
-- Read a live TRB configuration over SSH and convert it to editable YAML
-- Remote diff preview
+- Automatic internal UCI IDs and `tag_id` relationships
+- Import existing live RutOS Modbus configuration over SSH
+- YAML save/load
+- Reusable device/request templates
+- Bulk device generation with sequential or explicit Slave IDs
+- Automatic next-free TCP register allocation
+- Collision validation for devices, Slave IDs, symbol names and TCP register ranges
+- Exact RutOS UCI preview
+- Live unified diff against a TRB
 - Guarded SSH apply with local + remote backup
-- Rollback to a previous remote snapshot
-- Tkinter desktop editor for YAML/live projects, connections, devices, requests, mappings, TCP Server settings, validation and UCI preview
+- Remote rollback snapshots
+- Windows/Tkinter desktop GUI
+- atvise Connect `.Symbol` export for Input Registers and Holding Registers
+
+Modbus TCP Client devices and additional unverified register/symbol types are intentionally deferred to a later version.
 
 ## Desktop GUI
-
-The first desktop UI is deliberately a thin layer over the tested core. It does not maintain a separate configuration format; edits are made directly to the same `Project` model used by the CLI.
 
 Install the project and start it with:
 
@@ -35,33 +50,63 @@ pip install -e .
 tmc-gui
 ```
 
-The GUI currently supports:
+The GUI supports:
 
-- new/open/save YAML projects;
-- import the live `modbus_client` and `modbus_server` configuration from a TRB over SSH;
-- add/edit/delete serial connections;
-- add/edit/delete devices and their Modbus requests;
-- add/edit/delete Modbus TCP Server mappings;
-- edit TCP Server port, Device ID, enabled state and persistent connection;
-- validate the project;
-- preview the exact generated RutOS UCI before any deployment.
+- New/open/save YAML projects
+- Import live TRB configuration over SSH
+- Connections editor
+- Devices and requests editor
+- TCP Server mappings editor
+- TCP Server settings
+- Bulk Device Generator using any existing device as a template
+- Automatic next-free TCP mapping proposals
+- Validation
+- Generated UCI preview
+- Live TRB diff preview
+- Guarded Apply requiring explicit `APPLY` confirmation
+- Rollback to a saved remote snapshot
+- Export of atvise Connect `.Symbol` files
 
-Live **apply/rollback from the GUI is intentionally not enabled yet**. The CLI remains the guarded deployment path until the GUI has a proper diff/confirmation/backup workflow.
+## atvise Connect symbol export
 
-## Why UCI?
+The exporter uses the same TCP mappings that are generated for RutOS, so Connect does not need to be configured manually a second time.
 
-RutOS stores the live Modbus configuration in packages such as:
+A project containing mappings such as:
 
-- `/etc/config/modbus_client`
-- `/etc/config/modbus_server`
+```text
+Joy01       input_register   1025
+Joy01_SetP  input_register   1050
+HR_Joy01    holding_register 1080
+```
 
-A working TRB145 test confirmed that generated UCI sections are accepted by RutOS and appear correctly in the WebUI.
+produces:
+
+```text
+[]
+sym-Joy01=IR1025,
+sym-Joy01_SetP=IR1050,
+sym-HR_Joy01=HR1080,
+```
+
+This matches the tested atvise Connect symbol-file structure supplied during development.
+
+Only enabled mappings are exported by default. v1 supports the verified `IR` and `HR` forms only; unsupported register types fail explicitly instead of guessing Connect syntax.
+
+From the GUI use:
+
+```text
+Export → atvise Connect Symbol file...
+```
+
+From the CLI:
+
+```bash
+tmc export-symbols project.yaml -o Conn-TRB145.Symbol
+```
 
 ## Import an existing TRB
 
-The configurator can start from an already-configured device instead of requiring a handwritten YAML project.
-
-Read the live configuration over SSH:
+Read a live configuration over SSH:
 
 ```bash
 tmc import-live --host 10.33.22.1 -o imported.yaml
@@ -73,7 +118,7 @@ Or convert previously exported UCI files:
 tmc import-uci modbus_client.txt modbus_server.txt -o imported.yaml
 ```
 
-The importer resolves RutOS internal relationships such as:
+The importer resolves RutOS relationships such as:
 
 ```text
 rtu_server '2'
@@ -81,77 +126,20 @@ request_2 '3'
 tag_id '2.3'
 ```
 
-back into explicit project relationships:
+back into explicit project relationships between devices, requests and TCP mappings.
 
-```yaml
-device: TEST01
-request: IR_TEST
-```
+## Bulk generation
 
-TCP Server settings such as port and Device ID are also preserved in the project model.
+The GUI Bulk Device Generator can clone any existing device as a template. For example, a device with three requests can be expanded into a whole line of devices while assigning sequential Slave IDs and separate TCP register blocks.
 
-## Bulk templates
+The generator checks for:
 
-Repeated devices do not need to be written out individually. Define a template once and instantiate it with a `device_group`.
+- duplicate device names;
+- duplicate Slave IDs on the same serial connection;
+- duplicate mapping/symbol names;
+- overlapping TCP register ranges.
 
-```yaml
-connections:
-  - name: RS485_Main
-    type: serial
-    baudrate: 19200
-    databits: 8
-    parity: none
-    stopbits: 2
-
-tcp_server:
-  port: 502
-  device_id: 101
-
-templates:
-  room_controller:
-    requests:
-      - name: Temperature
-        function: 4
-        register: 515
-      - name: SetpointStatus
-        function: 4
-        register: 554
-      - name: SetpointCommand
-        function: 3
-        register: 262
-
-    mappings:
-      - name: "{device}_Temp"
-        request: Temperature
-        register_type: input_register
-        start_register: 1025
-      - name: "{device}_SetP"
-        request: SetpointStatus
-        register_type: input_register
-        start_register: 1050
-      - name: "HR_{device}"
-        request: SetpointCommand
-        register_type: holding_register
-        start_register: 1080
-
-device_groups:
-  - template: room_controller
-    connection: RS485_Main
-    name_pattern: "Room{index:02d}"
-    count: 20
-    slave_start: 1
-```
-
-For non-sequential addresses, use an explicit list:
-
-```yaml
-device_groups:
-  - template: room_controller
-    connection: RS485_Main
-    name_pattern: "Device{index:02d}"
-    count: 4
-    slave_ids: [1, 44, 47, 97]
-```
+Loading an existing device template automatically proposes the next free register for each related mapping group.
 
 ## CLI
 
@@ -161,9 +149,10 @@ Local operations:
 tmc validate project.yaml
 tmc preview project.yaml
 tmc export project.yaml -o output
+tmc export-symbols project.yaml -o Conn-TRB145.Symbol
 ```
 
-Compare against a live TRB without writing anything:
+Compare against a live TRB without writing:
 
 ```bash
 tmc remote-preview project.yaml --host 10.33.22.1
@@ -175,68 +164,43 @@ Apply after reviewing the diff:
 tmc apply project.yaml --host 10.33.22.1
 ```
 
-`apply` reads the live configuration, prints a unified diff, asks for explicit confirmation, creates local and remote backups, imports and validates the generated UCI, commits it, and restarts the Modbus services.
-
 Rollback:
 
 ```bash
-tmc rollback 20260818T090000Z --host 10.33.22.1
+tmc rollback <snapshot> --host 10.33.22.1
 ```
 
-SSH passwords are prompted interactively and are not stored in YAML. SSH keys can be supplied with `--key`. Unknown host keys are rejected unless `--trust-new-host` is explicitly supplied.
+Passwords are prompted interactively and are not stored in YAML. SSH keys are also supported.
 
-## Development plan
+## Why UCI?
 
-### Phase 1 — Core
+RutOS stores the live Modbus configuration in packages such as:
 
-- [x] YAML project model
-- [x] UCI parser/importer
-- [x] UCI generator
-- [x] `tag_id` relationship generation
-- [x] Validation
-- [x] CLI preview/export/import
-- [x] Unit tests
+- `/etc/config/modbus_client`
+- `/etc/config/modbus_server`
 
-### Phase 2 — Deployment
-
-- [x] SSH connection
-- [x] Read live UCI configuration
-- [x] Backup current Modbus config
-- [x] Diff / preview
-- [x] Apply configuration
-- [x] Restart affected services
-- [x] Rollback
-
-### Phase 3 — Device templates
-
-- [x] Reusable request templates
-- [x] Bulk device generation
-- [x] Sequential Slave ID generation
-- [x] Sequential TCP register allocation
-- [ ] Template library for common devices
-
-### Phase 4 — GUI
-
-- [x] Windows desktop application foundation
-- [x] Open live TRB / YAML project
-- [x] Connections editor
-- [x] Devices editor
-- [x] Requests editor
-- [x] TCP mapping editor
-- [x] Validation / UCI preview
-- [ ] GUI diff / guarded Apply / Rollback workflow
-- [ ] Bulk/template editor UI
-
-### Phase 5 — Additional transports / writes
-
-- [ ] Modbus TCP Client devices
-- [ ] Write-oriented request/mapping model
-- [ ] Preserve and edit additional RutOS Modbus options
+A real TRB145 test confirmed that generated UCI sections are accepted by RutOS, appear correctly in the WebUI, and can be linked through the Modbus TCP Server using generated `tag_id` references.
 
 ## Safety principle
 
-The configurator should never blindly overwrite a live TRB configuration. Deployment follows: read live config → back up → generate → validate → diff → explicit confirmation → apply → keep rollback snapshot.
+The configurator does not blindly overwrite a live TRB. Deployment follows:
 
-## Status
+```text
+read live config
+    ↓
+backup locally + remotely
+    ↓
+generate and validate
+    ↓
+show complete diff
+    ↓
+explicit confirmation
+    ↓
+apply UCI + commit + restart
+    ↓
+keep rollback snapshot
+```
 
-The CLI can round-trip between a live RutOS Modbus configuration and the generic YAML project model. A first desktop editor now sits on top of that same core. The next GUI milestone is guarded live diff/apply/rollback; Modbus TCP Client support will be added once a populated real RutOS TCP-client UCI example is available.
+## Next version
+
+Planned later work includes Modbus TCP Client devices, additional RutOS Modbus options, write-oriented request models, verified Coil/Discrete Input symbol export, reusable device-template libraries and installer/packaging improvements.
