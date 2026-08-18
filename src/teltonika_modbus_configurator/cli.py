@@ -17,7 +17,9 @@ from .deploy import (
 )
 from .loader import load_project
 from .uci_generator import generate_uci
+from .uci_parser import import_project
 from .validator import validate_project
+from .yaml_writer import dump_project
 
 
 def _print_validation(project) -> bool:
@@ -55,6 +57,20 @@ def _open_ssh(args) -> SshSession:
     )
 
 
+def _write_imported(project, output: Path) -> int:
+    if not _print_validation(project):
+        print("Imported configuration contains validation errors; refusing to write YAML.")
+        return 1
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(dump_project(project), encoding="utf-8")
+    print(f"Wrote imported project: {output}")
+    print(
+        f"Imported {len(project.connections)} connection(s), "
+        f"{len(project.devices)} device(s), and {len(project.mappings)} mapping(s)."
+    )
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="tmc")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -68,6 +84,19 @@ def main() -> int:
     export_cmd = sub.add_parser("export", help="Generate modbus_client and modbus_server files")
     export_cmd.add_argument("project", type=Path)
     export_cmd.add_argument("--output", "-o", type=Path, default=Path("output"))
+
+    import_uci_cmd = sub.add_parser(
+        "import-uci", help="Convert exported modbus_client/modbus_server UCI files to YAML"
+    )
+    import_uci_cmd.add_argument("modbus_client", type=Path)
+    import_uci_cmd.add_argument("modbus_server", type=Path)
+    import_uci_cmd.add_argument("--output", "-o", type=Path, default=Path("imported.yaml"))
+
+    import_live_cmd = sub.add_parser(
+        "import-live", help="Read a live TRB over SSH and save its Modbus config as YAML"
+    )
+    import_live_cmd.add_argument("--output", "-o", type=Path, default=Path("imported.yaml"))
+    _add_ssh_args(import_live_cmd)
 
     remote_preview_cmd = sub.add_parser(
         "remote-preview", help="Compare generated UCI with the live TRB over SSH"
@@ -96,6 +125,19 @@ def main() -> int:
             rollback_snapshot(session, args.snapshot)
         print(f"Rolled back remote snapshot {args.snapshot}")
         return 0
+
+    if args.command == "import-uci":
+        project = import_project(
+            args.modbus_client.read_text(encoding="utf-8"),
+            args.modbus_server.read_text(encoding="utf-8"),
+        )
+        return _write_imported(project, args.output)
+
+    if args.command == "import-live":
+        with _open_ssh(args) as session:
+            current = read_remote_config(session)
+        project = import_project(current.modbus_client, current.modbus_server)
+        return _write_imported(project, args.output)
 
     project = load_project(args.project)
 
