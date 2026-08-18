@@ -1,6 +1,7 @@
 import pytest
 
 from teltonika_modbus_configurator.loader import load_project
+from teltonika_modbus_configurator.models import Device, FunctionCode, Request, ServerMapping
 from teltonika_modbus_configurator.uci_generator import generate_uci
 from teltonika_modbus_configurator.uci_parser import import_project, parse_uci
 from teltonika_modbus_configurator.yaml_writer import dump_project
@@ -80,19 +81,85 @@ def test_import_known_trb_structure():
     assert project.tcp_server.device_id == 77
 
 
-def test_import_dump_load_generate_round_trip(tmp_path):
-    imported = import_project(CLIENT, SERVER)
+def test_import_zero_edit_generate_is_byte_exact():
+    client = CLIENT + """
+config tcp_server '5'
+\toption server_id '1'
+\toption port '502'
+"""
+    project = import_project(client, SERVER)
+    generated = generate_uci(project)
+    assert generated.modbus_client == client
+    assert generated.modbus_server == SERVER
+
+
+def test_import_dump_load_preserves_lossless_source(tmp_path):
+    client = CLIENT + """
+config tcp_server '5'
+\toption server_id '1'
+\toption port '502'
+"""
+    imported = import_project(client, SERVER)
     yaml_path = tmp_path / "imported.yaml"
     yaml_path.write_text(dump_project(imported), encoding="utf-8")
 
     loaded = load_project(yaml_path)
     generated = generate_uci(loaded)
 
-    assert "option port '1502'" in generated.modbus_server
-    assert "option device_id '77'" in generated.modbus_server
-    assert "config rtu_server '2'" in generated.modbus_client
-    assert "config request_2 '3'" in generated.modbus_client
-    assert "option tag_id '2.3'" in generated.modbus_server
+    assert generated.modbus_client == client
+    assert generated.modbus_server == SERVER
+
+
+def test_append_new_device_uses_ids_after_existing_stub_and_preserves_baseline():
+    client = CLIENT + """
+config tcp_server '5'
+\toption server_id '1'
+\toption port '502'
+"""
+    project = import_project(client, SERVER)
+    project.devices.append(
+        Device(
+            name="PUSH_TEST",
+            slave_id=25,
+            connection="VeterinaTEST",
+            enabled=False,
+            requests=[
+                Request(
+                    name="IR_TEST",
+                    function=FunctionCode.READ_INPUT_REGISTERS,
+                    register=515,
+                    enabled=False,
+                )
+            ],
+        )
+    )
+    project.mappings.append(
+        ServerMapping(
+            name="PUSH_TEST_IR",
+            device="PUSH_TEST",
+            request="IR_TEST",
+            register=1201,
+            register_type="input_register",
+            enabled=False,
+        )
+    )
+
+    generated = generate_uci(project)
+    assert generated.modbus_client.startswith(client.rstrip("\n") + "\n\n")
+    assert "config rtu_server '6'" in generated.modbus_client
+    assert "config request_6 '7'" in generated.modbus_client
+    assert "option name 'PUSH_TEST'" in generated.modbus_client
+    assert generated.modbus_server.startswith(SERVER.rstrip("\n") + "\n\n")
+    assert "config tag '2'" in generated.modbus_server
+    assert "option tag_name 'PUSH_TEST_IR'" in generated.modbus_server
+    assert "option tag_id '6.7'" in generated.modbus_server
+
+
+def test_editing_imported_device_is_refused():
+    project = import_project(CLIENT, SERVER)
+    project.devices[0].slave_id = 99
+    with pytest.raises(ValueError, match="supports additions only"):
+        generate_uci(project)
 
 
 def test_empty_tcp_client_stub_is_safe_to_ignore():
