@@ -15,6 +15,7 @@ from .bulk import (
     validate_bulk_spec,
 )
 from .models import FunctionCode, Project
+from .register_allocator import next_free_register
 
 
 REGISTER_TYPES = ("coil", "discrete_input", "holding_register", "input_register")
@@ -57,8 +58,13 @@ class BulkGeneratorWindow(tk.Toplevel):
         self.project = project
         self.on_applied = on_applied
         self.title("Bulk Device Generator")
-        self.geometry("1050x760")
-        self.minsize(900, 650)
+
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        width = min(1100, max(820, screen_w - 120))
+        height = min(760, max(560, screen_h - 140))
+        self.geometry(f"{width}x{height}")
+        self.minsize(760, 520)
 
         self.requests: list[BulkRequestSpec] = []
         self.mappings: list[BulkMappingSpec] = []
@@ -84,8 +90,16 @@ class BulkGeneratorWindow(tk.Toplevel):
         outer = ttk.Frame(self, padding=10)
         outer.pack(fill="both", expand=True)
 
+        # Pack actions first on the bottom so they remain visible even when the
+        # center tables have to shrink on smaller/scaled displays.
+        actions = ttk.Frame(outer)
+        actions.pack(side="bottom", fill="x", pady=(10, 0))
+        ttk.Button(actions, text="Preview batch", command=self.preview).pack(side="right", padx=4)
+        ttk.Button(actions, text="Add batch to project", command=self.apply_batch).pack(side="right", padx=4)
+        ttk.Button(actions, text="Close", command=self.destroy).pack(side="right", padx=4)
+
         config = ttk.LabelFrame(outer, text="Batch", padding=8)
-        config.pack(fill="x")
+        config.pack(side="top", fill="x")
 
         templates = ["<blank>"] + [d.name for d in self.project.devices]
         fields = [
@@ -119,7 +133,7 @@ class BulkGeneratorWindow(tk.Toplevel):
             config.columnconfigure(col, weight=1)
 
         paned = ttk.Panedwindow(outer, orient="vertical")
-        paned.pack(fill="both", expand=True, pady=(10, 0))
+        paned.pack(side="top", fill="both", expand=True, pady=(10, 0))
 
         req_frame = ttk.LabelFrame(paned, text="Requests", padding=6)
         map_frame = ttk.LabelFrame(paned, text="TCP Server mappings", padding=6)
@@ -136,9 +150,11 @@ class BulkGeneratorWindow(tk.Toplevel):
             ("name", "Name", 170), ("fc", "FC", 55), ("register", "Register", 85),
             ("count", "Count", 65), ("dtype", "Data type", 110), ("order", "Byte order", 150),
         ):
-            self.req_tree.heading(key, text=title); self.req_tree.column(key, width=width, anchor="w")
+            self.req_tree.heading(key, text=title)
+            self.req_tree.column(key, width=width, anchor="w")
         self.req_tree.pack(fill="both", expand=True)
-        rb = ttk.Frame(req_frame); rb.pack(fill="x", pady=(5, 0))
+        rb = ttk.Frame(req_frame)
+        rb.pack(fill="x", pady=(5, 0))
         ttk.Button(rb, text="Add request", command=self.add_request).pack(side="left", padx=3)
         ttk.Button(rb, text="Edit request", command=self.edit_request).pack(side="left", padx=3)
         ttk.Button(rb, text="Delete request", command=self.delete_request).pack(side="left", padx=3)
@@ -153,18 +169,14 @@ class BulkGeneratorWindow(tk.Toplevel):
             ("name", "Name pattern", 210), ("request", "Request", 150), ("type", "TCP type", 140),
             ("start", "Start register", 100), ("step", "Step", 70),
         ):
-            self.map_tree.heading(key, text=title); self.map_tree.column(key, width=width, anchor="w")
+            self.map_tree.heading(key, text=title)
+            self.map_tree.column(key, width=width, anchor="w")
         self.map_tree.pack(fill="both", expand=True)
-        mb = ttk.Frame(map_frame); mb.pack(fill="x", pady=(5, 0))
+        mb = ttk.Frame(map_frame)
+        mb.pack(fill="x", pady=(5, 0))
         ttk.Button(mb, text="Add mapping", command=self.add_mapping).pack(side="left", padx=3)
         ttk.Button(mb, text="Edit mapping", command=self.edit_mapping).pack(side="left", padx=3)
         ttk.Button(mb, text="Delete mapping", command=self.delete_mapping).pack(side="left", padx=3)
-
-        actions = ttk.Frame(outer)
-        actions.pack(fill="x", pady=(10, 0))
-        ttk.Button(actions, text="Preview batch", command=self.preview).pack(side="right", padx=4)
-        ttk.Button(actions, text="Add batch to project", command=self.apply_batch).pack(side="right", padx=4)
-        ttk.Button(actions, text="Close", command=self.destroy).pack(side="right", padx=4)
 
     def load_template(self):
         name = self.vars["template"].get()
@@ -203,7 +215,12 @@ class BulkGeneratorWindow(tk.Toplevel):
                 name_pattern=self._suggest_mapping_pattern(m.name, device.name, m.request),
                 request=m.request,
                 register_type=m.register_type,
-                start_register=m.register,
+                start_register=next_free_register(
+                    self.project,
+                    register_type=m.register_type,
+                    request_name=m.request,
+                    default=m.register,
+                ),
                 step=max(1, next((r.count for r in device.requests if r.name == m.request), 1)),
                 enabled=m.enabled,
             )
@@ -230,7 +247,8 @@ class BulkGeneratorWindow(tk.Toplevel):
 
     def add_request(self):
         v = self._request_dialog()
-        if not v: return
+        if not v:
+            return
         try:
             self.requests.append(BulkRequestSpec(v["name"], FunctionCode(int(v["function"])), int(v["register"]), int(v["count"]), v["data_type"], v["byte_order"], True))
             self._refresh_tables()
@@ -239,27 +257,35 @@ class BulkGeneratorWindow(tk.Toplevel):
 
     def edit_request(self):
         sel = self.req_tree.selection()
-        if not sel: return
-        i = int(sel[0]); r = self.requests[i]
+        if not sel:
+            return
+        i = int(sel[0])
+        r = self.requests[i]
         v = self._request_dialog({**asdict(r), "function": str(int(r.function))})
-        if not v: return
+        if not v:
+            return
         try:
             old = r.name
             self.requests[i] = BulkRequestSpec(v["name"], FunctionCode(int(v["function"])), int(v["register"]), int(v["count"]), v["data_type"], v["byte_order"], r.enabled)
             if old != v["name"]:
                 for m in self.mappings:
-                    if m.request == old: m.request = v["name"]
+                    if m.request == old:
+                        m.request = v["name"]
             self._refresh_tables()
         except Exception as exc:
             messagebox.showerror("Request", str(exc), parent=self)
 
     def delete_request(self):
         sel = self.req_tree.selection()
-        if not sel: return
-        i = int(sel[0]); name = self.requests[i].name
+        if not sel:
+            return
+        i = int(sel[0])
+        name = self.requests[i].name
         if any(m.request == name for m in self.mappings):
-            messagebox.showerror("Request", "Delete or change mappings that reference this request first.", parent=self); return
-        del self.requests[i]; self._refresh_tables()
+            messagebox.showerror("Request", "Delete or change mappings that reference this request first.", parent=self)
+            return
+        del self.requests[i]
+        self._refresh_tables()
 
     def _mapping_dialog(self, initial=None):
         requests = tuple(r.name for r in self.requests) or ("",)
@@ -274,9 +300,11 @@ class BulkGeneratorWindow(tk.Toplevel):
 
     def add_mapping(self):
         if not self.requests:
-            messagebox.showerror("Mapping", "Add at least one request first.", parent=self); return
+            messagebox.showerror("Mapping", "Add at least one request first.", parent=self)
+            return
         v = self._mapping_dialog()
-        if not v: return
+        if not v:
+            return
         try:
             self.mappings.append(BulkMappingSpec(v["name_pattern"], v["request"], v["register_type"], int(v["start_register"]), int(v["step"]), True))
             self._refresh_tables()
@@ -285,10 +313,13 @@ class BulkGeneratorWindow(tk.Toplevel):
 
     def edit_mapping(self):
         sel = self.map_tree.selection()
-        if not sel: return
-        i = int(sel[0]); m = self.mappings[i]
+        if not sel:
+            return
+        i = int(sel[0])
+        m = self.mappings[i]
         v = self._mapping_dialog(asdict(m))
-        if not v: return
+        if not v:
+            return
         try:
             self.mappings[i] = BulkMappingSpec(v["name_pattern"], v["request"], v["register_type"], int(v["start_register"]), int(v["step"]), m.enabled)
             self._refresh_tables()
@@ -297,8 +328,10 @@ class BulkGeneratorWindow(tk.Toplevel):
 
     def delete_mapping(self):
         sel = self.map_tree.selection()
-        if not sel: return
-        del self.mappings[int(sel[0])]; self._refresh_tables()
+        if not sel:
+            return
+        del self.mappings[int(sel[0])]
+        self._refresh_tables()
 
     def _refresh_tables(self):
         self.req_tree.delete(*self.req_tree.get_children())
@@ -367,11 +400,16 @@ class BulkGeneratorWindow(tk.Toplevel):
 
     def _show_text(self, title: str, text: str):
         window = tk.Toplevel(self)
-        window.title(title); window.geometry("900x650")
+        window.title(title)
+        window.geometry("900x650")
         area = tk.Text(window, wrap="none", font=("Consolas", 10))
         y = ttk.Scrollbar(window, orient="vertical", command=area.yview)
         x = ttk.Scrollbar(window, orient="horizontal", command=area.xview)
         area.configure(yscrollcommand=y.set, xscrollcommand=x.set)
-        area.grid(row=0, column=0, sticky="nsew"); y.grid(row=0, column=1, sticky="ns"); x.grid(row=1, column=0, sticky="ew")
-        window.rowconfigure(0, weight=1); window.columnconfigure(0, weight=1)
-        area.insert("1.0", text); area.configure(state="disabled")
+        area.grid(row=0, column=0, sticky="nsew")
+        y.grid(row=0, column=1, sticky="ns")
+        x.grid(row=1, column=0, sticky="ew")
+        window.rowconfigure(0, weight=1)
+        window.columnconfigure(0, weight=1)
+        area.insert("1.0", text)
+        area.configure(state="disabled")
