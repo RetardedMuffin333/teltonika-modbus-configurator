@@ -1,14 +1,15 @@
-"""Extended desktop entry point with bulk generation tools."""
+"""Extended desktop entry point with deployment and bulk-generation tools."""
 
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import messagebox
 
-from .gui import ProjectEditor
 from .gui_bulk import BulkGeneratorWindow
+from .gui_deploy import DeploymentEditor
 
 
-class ExtendedProjectEditor(ProjectEditor):
+class ExtendedProjectEditor(DeploymentEditor):
     def _build_menu(self):
         super()._build_menu()
         menu = self.nametowidget(self.cget("menu"))
@@ -18,8 +19,6 @@ class ExtendedProjectEditor(ProjectEditor):
 
     def open_bulk_generator(self):
         if not self.project.connections:
-            from tkinter import messagebox
-
             messagebox.showerror(
                 "Bulk generator",
                 "Create or import at least one serial connection first.",
