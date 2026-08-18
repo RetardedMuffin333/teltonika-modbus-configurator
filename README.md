@@ -17,6 +17,8 @@ The core model supports:
 - Internal `tag_id` relationship generation
 - Validation before deployment
 - UCI export generation
+- Reusable device/request templates
+- Bulk device generation
 - Later: SSH apply, backup and rollback
 - Later: Modbus TCP Client devices
 - Later: Windows GUI
@@ -30,18 +32,79 @@ RutOS stores the live Modbus configuration in UCI packages such as:
 
 A working test confirmed that generated UCI sections can be imported into a TRB145 and are then recognized correctly by the RutOS WebUI.
 
+## Bulk templates
+
+Repeated devices do not need to be written out individually. Define a template once and instantiate it with a `device_group`.
+
+```yaml
+connections:
+  - name: RS485_Main
+    type: serial
+    baudrate: 19200
+    databits: 8
+    parity: none
+    stopbits: 2
+
+templates:
+  room_controller:
+    requests:
+      - name: Temperature
+        function: 4
+        register: 515
+      - name: SetpointStatus
+        function: 4
+        register: 554
+      - name: SetpointCommand
+        function: 3
+        register: 262
+
+    mappings:
+      - name: "{device}_Temp"
+        request: Temperature
+        register_type: input_register
+        start_register: 1025
+      - name: "{device}_SetP"
+        request: SetpointStatus
+        register_type: input_register
+        start_register: 1050
+      - name: "HR_{device}"
+        request: SetpointCommand
+        register_type: holding_register
+        start_register: 1080
+
+device_groups:
+  - template: room_controller
+    connection: RS485_Main
+    name_pattern: "Room{index:02d}"
+    count: 20
+    slave_start: 1
+```
+
+This expands to `Room01` through `Room20`, Slave IDs 1 through 20, with sequential TCP mappings starting at the configured register ranges.
+
+For installations with non-sequential addresses, `slave_ids` can be supplied explicitly:
+
+```yaml
+device_groups:
+  - template: room_controller
+    connection: RS485_Main
+    name_pattern: "Device{index:02d}"
+    count: 4
+    slave_ids: [1, 44, 47, 97]
+```
+
 ## Development plan
 
 ### Phase 1 — Core
 
 - [x] Define repository structure
-- [ ] YAML project model
+- [x] YAML project model
 - [ ] UCI parser
-- [ ] UCI generator
-- [ ] `tag_id` relationship generation
-- [ ] Validation
-- [ ] CLI preview/export
-- [ ] Unit tests
+- [x] UCI generator
+- [x] `tag_id` relationship generation
+- [x] Validation
+- [x] CLI preview/export
+- [x] Unit tests
 
 ### Phase 2 — Deployment
 
@@ -55,10 +118,10 @@ A working test confirmed that generated UCI sections can be imported into a TRB1
 
 ### Phase 3 — Device templates
 
-- [ ] Reusable request templates
-- [ ] Bulk device generation
-- [ ] Sequential Slave ID generation
-- [ ] Sequential TCP register allocation
+- [x] Reusable request templates
+- [x] Bulk device generation
+- [x] Sequential Slave ID generation
+- [x] Sequential TCP register allocation
 - [ ] Template library for common devices
 
 ### Phase 4 — GUI
@@ -85,4 +148,4 @@ The configurator should never blindly overwrite a live TRB configuration. Deploy
 
 ## Status
 
-Early development. The first successful proof-of-concept generated a disabled RTU device and a linked Modbus TCP Server mapping and applied both to a TRB145 via UCI.
+Early development. The first successful proof-of-concept generated a disabled RTU device and a linked Modbus TCP Server mapping and applied both to a TRB145 via UCI. The generator now also supports reusable templates and bulk device groups.
