@@ -8,7 +8,7 @@ from .models import Project
 
 
 def project_to_dict(project: Project) -> dict:
-    return {
+    data = {
         "connections": [
             {
                 "name": c.name,
@@ -62,6 +62,12 @@ def project_to_dict(project: Project) -> dict:
             for m in project.mappings
         ],
     }
+    if project.source_uci is not None:
+        data["source_uci"] = {
+            "modbus_client": project.source_uci.modbus_client,
+            "modbus_server": project.source_uci.modbus_server,
+        }
+    return data
 
 
 def dump_project(project: Project) -> str:
