@@ -1,0 +1,59 @@
+connections:
+  - name: RS485_Main
+    type: serial
+    device: /dev/rs485
+    baudrate: 19200
+    databits: 8
+    parity: none
+    stopbits: 2
+
+templates:
+  room_controller:
+    period: 10
+    timeout: 1
+    requests:
+      - name: Temperature
+        function: 4
+        register: 515
+        count: 1
+        data_type: int16
+        byte_order: high_byte_first
+
+      - name: SetpointStatus
+        function: 4
+        register: 554
+        count: 1
+        data_type: int16
+        byte_order: high_byte_first
+
+      - name: SetpointCommand
+        function: 3
+        register: 262
+        count: 1
+        data_type: int16
+        byte_order: high_byte_first
+
+    mappings:
+      - name: "{device}_Temp"
+        request: Temperature
+        register_type: input_register
+        start_register: 1025
+
+      - name: "{device}_SetP"
+        request: SetpointStatus
+        register_type: input_register
+        start_register: 1050
+
+      - name: "HR_{device}"
+        request: SetpointCommand
+        register_type: holding_register
+        start_register: 1080
+
+device_groups:
+  - template: room_controller
+    connection: RS485_Main
+    name_pattern: "Room{index:02d}"
+    count: 20
+    start_index: 1
+    slave_start: 1
+    slave_step: 1
