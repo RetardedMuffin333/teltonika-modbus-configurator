@@ -9,6 +9,7 @@ import yaml
 from .models import (
     Device,
     FunctionCode,
+    ImportedUciState,
     Project,
     Request,
     SerialConnection,
@@ -182,9 +183,18 @@ def load_project(path: str | Path) -> Project:
         keep_connection=_bool(tcp.get("keep_connection"), True),
     )
 
+    source = data.get("source_uci") or None
+    source_uci = None
+    if source:
+        source_uci = ImportedUciState(
+            modbus_client=str(source["modbus_client"]),
+            modbus_server=str(source["modbus_server"]),
+        )
+
     return Project(
         connections=connections,
         devices=devices,
         mappings=mappings,
         tcp_server=tcp_server,
+        source_uci=source_uci,
     )
