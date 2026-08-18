@@ -1,3 +1,5 @@
+import pytest
+
 from teltonika_modbus_configurator.loader import load_project
 from teltonika_modbus_configurator.uci_generator import generate_uci
 from teltonika_modbus_configurator.uci_parser import import_project, parse_uci
@@ -91,3 +93,30 @@ def test_import_dump_load_generate_round_trip(tmp_path):
     assert "config rtu_server '2'" in generated.modbus_client
     assert "config request_2 '3'" in generated.modbus_client
     assert "option tag_id '2.3'" in generated.modbus_server
+
+
+def test_empty_tcp_client_stub_is_safe_to_ignore():
+    client = CLIENT + """
+config tcp_server '5'
+\toption server_id '1'
+\toption port '502'
+"""
+    project = import_project(client, SERVER)
+    assert project.devices[0].name == "TEST01"
+
+
+def test_active_tcp_client_is_not_silently_dropped():
+    client = CLIENT + """
+config tcp_server '5'
+\toption server_id '1'
+\toption port '502'
+
+config request_5 '6'
+\toption name 'TCP_IR'
+\toption function '4'
+\toption data_type '16bit_int_hi_first'
+\toption reg_count '1'
+\toption first_reg '10'
+"""
+    with pytest.raises(ValueError, match="Active Modbus TCP Client"):
+        import_project(client, SERVER)

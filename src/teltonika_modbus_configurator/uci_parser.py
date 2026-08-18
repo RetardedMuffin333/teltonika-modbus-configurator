@@ -68,7 +68,6 @@ def parse_uci(text: str) -> list[UciSection]:
             current.options[parts[1]] = parts[2]
             continue
 
-        # Lists and unsupported directives should not be silently misread.
         raise ValueError(f"Unsupported UCI directive on line {lineno}: {raw}")
 
     return sections
@@ -83,7 +82,13 @@ def _decode_data_type(value: str) -> tuple[str, str]:
 
 
 def import_project(modbus_client: str, modbus_server: str) -> Project:
-    """Convert live/exported RutOS Modbus UCI packages to a Project."""
+    """Convert live/exported RutOS Modbus UCI packages to a Project.
+
+    Empty RutOS TCP-client stubs are tolerated because RutOS may keep them in
+    `modbus_client`. Active TCP-client devices are deliberately rejected until
+    their full UCI schema is modeled; silently dropping them would make a later
+    round-trip/apply unsafe.
+    """
     client_sections = parse_uci(modbus_client)
     server_sections = parse_uci(modbus_server)
 
@@ -107,11 +112,26 @@ def import_project(modbus_client: str, modbus_server: str) -> Project:
     device_section_by_id: dict[str, UciSection] = {
         s.name: s for s in client_sections if s.section_type == "rtu_server"
     }
+    tcp_client_ids = {
+        s.name for s in client_sections if s.section_type == "tcp_server"
+    }
+
     request_sections_by_device: dict[str, list[UciSection]] = {}
     for section in client_sections:
         if section.section_type.startswith("request_"):
             parent_id = section.section_type.removeprefix("request_")
             request_sections_by_device.setdefault(parent_id, []).append(section)
+
+    # Do not silently lose a configured Modbus TCP Client device.
+    tcp_with_requests = sorted(
+        tcp_id for tcp_id in tcp_client_ids if request_sections_by_device.get(tcp_id)
+    )
+    if tcp_with_requests:
+        raise ValueError(
+            "Active Modbus TCP Client UCI is present but not modeled yet "
+            f"(tcp_server section(s): {', '.join(tcp_with_requests)}). "
+            "Import aborted to avoid a lossy round trip."
+        )
 
     devices: list[Device] = []
     device_name_by_id: dict[str, str] = {}
@@ -181,6 +201,12 @@ def import_project(modbus_client: str, modbus_server: str) -> Project:
         if len(parts) != 2:
             raise ValueError(f"Tag {section.name} has invalid tag_id {tag_id!r}")
         device_id, request_id = parts
+
+        if device_id in tcp_client_ids:
+            raise ValueError(
+                f"Tag {section.name} references Modbus TCP Client source {tag_id}, "
+                "which is not modeled yet. Import aborted to avoid data loss."
+            )
 
         try:
             device_name = device_name_by_id[device_id]
