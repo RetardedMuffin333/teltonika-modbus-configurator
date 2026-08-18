@@ -19,7 +19,7 @@ The core model supports:
 - UCI export generation
 - Reusable device/request templates
 - Bulk device generation
-- Later: SSH apply, backup and rollback
+- SSH live preview / apply / rollback
 - Later: Modbus TCP Client devices
 - Later: Windows GUI
 
@@ -93,6 +93,46 @@ device_groups:
     slave_ids: [1, 44, 47, 97]
 ```
 
+## CLI
+
+Validate and preview locally:
+
+```bash
+tmc validate examples/bulk_devices.yaml
+tmc preview examples/bulk_devices.yaml
+tmc export examples/bulk_devices.yaml -o output
+```
+
+Compare a generated project with the live TRB without writing anything:
+
+```bash
+tmc remote-preview examples/bulk_devices.yaml --host 10.33.22.1
+```
+
+Apply only after reviewing the diff:
+
+```bash
+tmc apply examples/bulk_devices.yaml --host 10.33.22.1
+```
+
+`apply` performs the safety sequence automatically:
+
+1. reads the live `modbus_client` and `modbus_server` UCI exports;
+2. prints a unified diff;
+3. requires explicit confirmation;
+4. stores a local backup under `backups/<UTC timestamp>/`;
+5. creates a remote snapshot under `/root/tmc-backups/<UTC timestamp>/`;
+6. imports and validates the generated UCI before commit;
+7. commits and restarts the Modbus services.
+
+Rollback a snapshot with:
+
+```bash
+tmc rollback 20260818T090000Z --host 10.33.22.1
+```
+
+SSH passwords are prompted interactively and are not stored in project YAML. SSH keys can be supplied with `--key`. Unknown host keys are rejected unless `--trust-new-host` is explicitly supplied.
+
 ## Development plan
 
 ### Phase 1 — Core
@@ -108,13 +148,13 @@ device_groups:
 
 ### Phase 2 — Deployment
 
-- [ ] SSH connection
-- [ ] Read live UCI configuration
-- [ ] Backup current Modbus config
-- [ ] Diff / preview
-- [ ] Apply configuration
-- [ ] Restart affected services
-- [ ] Rollback
+- [x] SSH connection
+- [x] Read live UCI configuration
+- [x] Backup current Modbus config
+- [x] Diff / preview
+- [x] Apply configuration
+- [x] Restart affected services
+- [x] Rollback
 
 ### Phase 3 — Device templates
 
@@ -136,16 +176,16 @@ device_groups:
 
 ## Safety principle
 
-The configurator should never blindly overwrite a live TRB configuration. Deployment should follow:
+The configurator should never blindly overwrite a live TRB configuration. Deployment follows:
 
 1. Read live configuration.
-2. Back it up.
+2. Back it up locally and remotely.
 3. Generate proposed configuration.
 4. Validate references and address conflicts.
 5. Show a diff/preview.
 6. Apply only after explicit confirmation.
-7. Keep a rollback copy.
+7. Keep a rollback snapshot.
 
 ## Status
 
-Early development. The first successful proof-of-concept generated a disabled RTU device and a linked Modbus TCP Server mapping and applied both to a TRB145 via UCI. The generator now also supports reusable templates and bulk device groups.
+Early development. The first successful proof-of-concept generated a disabled RTU device and a linked Modbus TCP Server mapping and applied both to a TRB145 via UCI. The project now supports reusable templates, bulk device groups, and a guarded SSH deployment workflow.
