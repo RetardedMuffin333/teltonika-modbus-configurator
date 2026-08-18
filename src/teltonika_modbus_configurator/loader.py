@@ -6,7 +6,15 @@ from typing import Any
 
 import yaml
 
-from .models import Device, FunctionCode, Project, Request, SerialConnection, ServerMapping
+from .models import (
+    Device,
+    FunctionCode,
+    Project,
+    Request,
+    SerialConnection,
+    ServerMapping,
+    TcpServerSettings,
+)
 
 
 def _bool(value: Any, default: bool = True) -> bool:
@@ -44,11 +52,7 @@ def _format_name(
 
 
 def _expand_groups(data: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Expand reusable templates/device_groups into normal devices and mappings.
-
-    Expanded entries use the same schema as top-level ``devices`` and ``mappings``.
-    This keeps the rest of the application unaware of bulk-generation syntax.
-    """
+    """Expand reusable templates/device_groups into normal devices and mappings."""
     templates = data.get("templates", {}) or {}
     devices: list[dict[str, Any]] = []
     mappings: list[dict[str, Any]] = []
@@ -84,37 +88,39 @@ def _expand_groups(data: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dic
                 name_pattern, device="", index=index, ordinal=ordinal
             )
 
-            device = {
-                "name": device_name,
-                "connection": group["connection"],
-                "slave_id": slave_ids[ordinal],
-                "period": group.get("period", template.get("period", 10)),
-                "timeout": group.get("timeout", template.get("timeout", 1)),
-                "enabled": group.get("enabled", template.get("enabled", True)),
-                "requests": deepcopy(template.get("requests", [])),
-            }
-            devices.append(device)
+            devices.append(
+                {
+                    "name": device_name,
+                    "connection": group["connection"],
+                    "slave_id": slave_ids[ordinal],
+                    "period": group.get("period", template.get("period", 10)),
+                    "timeout": group.get("timeout", template.get("timeout", 1)),
+                    "enabled": group.get("enabled", template.get("enabled", True)),
+                    "requests": deepcopy(template.get("requests", [])),
+                }
+            )
 
             for mapping_template in template.get("mappings", []) or []:
                 request_name = str(mapping_template["request"])
-                mapping = {
-                    "name": _format_name(
-                        str(mapping_template.get("name", "{device}_{request}")),
-                        device=device_name,
-                        index=index,
-                        ordinal=ordinal,
-                        request=request_name,
-                    ),
-                    "device": device_name,
-                    "request": request_name,
-                    "register_type": mapping_template["register_type"],
-                    "register": int(mapping_template["start_register"])
-                    + ordinal * int(mapping_template.get("step", 1)),
-                    "enabled": mapping_template.get(
-                        "enabled", group.get("mapping_enabled", True)
-                    ),
-                }
-                mappings.append(mapping)
+                mappings.append(
+                    {
+                        "name": _format_name(
+                            str(mapping_template.get("name", "{device}_{request}")),
+                            device=device_name,
+                            index=index,
+                            ordinal=ordinal,
+                            request=request_name,
+                        ),
+                        "device": device_name,
+                        "request": request_name,
+                        "register_type": mapping_template["register_type"],
+                        "register": int(mapping_template["start_register"])
+                        + ordinal * int(mapping_template.get("step", 1)),
+                        "enabled": mapping_template.get(
+                            "enabled", group.get("mapping_enabled", True)
+                        ),
+                    }
+                )
 
     return devices, mappings
 
@@ -168,4 +174,17 @@ def load_project(path: str | Path) -> Project:
         for item in raw_mappings
     ]
 
-    return Project(connections=connections, devices=devices, mappings=mappings)
+    tcp = data.get("tcp_server", {}) or {}
+    tcp_server = TcpServerSettings(
+        port=int(tcp.get("port", 502)),
+        device_id=int(tcp.get("device_id", 101)),
+        enabled=_bool(tcp.get("enabled"), True),
+        keep_connection=_bool(tcp.get("keep_connection"), True),
+    )
+
+    return Project(
+        connections=connections,
+        devices=devices,
+        mappings=mappings,
+        tcp_server=tcp_server,
+    )
