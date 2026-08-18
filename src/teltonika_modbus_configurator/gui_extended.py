@@ -21,8 +21,12 @@ class ExtendedProjectEditor(DeploymentEditor):
 
         export_menu = tk.Menu(menu, tearoff=False)
         export_menu.add_command(
-            label="atvise Connect Symbol file...",
-            command=self.export_atvise_symbol_file,
+            label="atvise Connect Symbol file (all mappings)...",
+            command=lambda: self.export_atvise_symbol_file(include_disabled=True),
+        )
+        export_menu.add_command(
+            label="atvise Connect Symbol file (enabled only)...",
+            command=lambda: self.export_atvise_symbol_file(include_disabled=False),
         )
         menu.add_cascade(label="Export", menu=export_menu)
 
@@ -41,17 +45,26 @@ class ExtendedProjectEditor(DeploymentEditor):
         self.refresh_all()
         self.status.set("Bulk batch added to project; validate and save before deployment")
 
-    def export_atvise_symbol_file(self):
+    def export_atvise_symbol_file(self, *, include_disabled: bool = True):
         try:
-            text = export_atvise_symbols(self.project)
+            text = export_atvise_symbols(
+                self.project,
+                include_disabled=include_disabled,
+            )
         except Exception as exc:
             messagebox.showerror("atvise symbol export", str(exc), parent=self)
             return
 
-        if text.strip() == "[]":
+        selected = [
+            mapping
+            for mapping in self.project.mappings
+            if include_disabled or mapping.enabled
+        ]
+        if not selected:
+            scope = "TCP mappings" if include_disabled else "enabled TCP mappings"
             messagebox.showerror(
                 "atvise symbol export",
-                "There are no enabled TCP mappings to export.",
+                f"There are no {scope} to export.",
                 parent=self,
             )
             return
@@ -70,11 +83,12 @@ class ExtendedProjectEditor(DeploymentEditor):
         try:
             with open(filename, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(text)
-            count = sum(1 for m in self.project.mappings if m.enabled)
+            count = len(selected)
+            scope = "all mappings" if include_disabled else "enabled mappings only"
             self.status.set(f"Exported {count} atvise symbol(s) to {filename}")
             messagebox.showinfo(
                 "atvise symbol export",
-                f"Exported {count} symbol(s).\n\n{filename}",
+                f"Exported {count} symbol(s) ({scope}).\n\n{filename}",
                 parent=self,
             )
         except Exception as exc:
