@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from .models import Project
 
 
+TELTONIKA_TCP_REGISTER_MIN = 1025
+TELTONIKA_TCP_REGISTER_MAX = 65536
+
+
 @dataclass(slots=True)
 class ValidationMessage:
     level: str
@@ -84,6 +88,15 @@ def validate_project(project: Project) -> list[ValidationMessage]:
                 ValidationMessage(
                     "error",
                     f"{mapping.name}: unknown request '{mapping.request}' on {mapping.device}",
+                )
+            )
+
+        if not TELTONIKA_TCP_REGISTER_MIN <= mapping.register <= TELTONIKA_TCP_REGISTER_MAX:
+            messages.append(
+                ValidationMessage(
+                    "error",
+                    f"{mapping.name}: TCP register must be "
+                    f"{TELTONIKA_TCP_REGISTER_MIN}..{TELTONIKA_TCP_REGISTER_MAX}",
                 )
             )
 
