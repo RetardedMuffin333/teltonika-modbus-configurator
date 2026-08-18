@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.log
+.env
+.vscode/
+.idea/
+
+# Generated configs / device backups
+output/
+backups/
+*.tar.gz
