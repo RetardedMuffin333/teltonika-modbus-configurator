@@ -27,8 +27,20 @@ def _request(item: dict[str, Any]) -> Request:
     )
 
 
-def _format_name(pattern: str, *, device: str, index: int, ordinal: int) -> str:
-    return pattern.format(device=device, index=index, ordinal=ordinal)
+def _format_name(
+    pattern: str,
+    *,
+    device: str,
+    index: int,
+    ordinal: int,
+    request: str = "",
+) -> str:
+    return pattern.format(
+        device=device,
+        index=index,
+        ordinal=ordinal,
+        request=request,
+    )
 
 
 def _expand_groups(data: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -84,15 +96,17 @@ def _expand_groups(data: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dic
             devices.append(device)
 
             for mapping_template in template.get("mappings", []) or []:
+                request_name = str(mapping_template["request"])
                 mapping = {
                     "name": _format_name(
                         str(mapping_template.get("name", "{device}_{request}")),
                         device=device_name,
                         index=index,
                         ordinal=ordinal,
+                        request=request_name,
                     ),
                     "device": device_name,
-                    "request": mapping_template["request"],
+                    "request": request_name,
                     "register_type": mapping_template["register_type"],
                     "register": int(mapping_template["start_register"])
                     + ordinal * int(mapping_template.get("step", 1)),
