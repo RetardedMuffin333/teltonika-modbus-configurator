@@ -1,5 +1,6 @@
-"""Load a project definition from YAML."""
+"""Load and expand a project definition from YAML."""
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,96 @@ def _bool(value: Any, default: bool = True) -> bool:
     if value is None:
         return default
     return bool(value)
+
+
+def _request(item: dict[str, Any]) -> Request:
+    return Request(
+        name=item["name"],
+        function=FunctionCode(int(item["function"])),
+        register=int(item["register"]),
+        count=int(item.get("count", 1)),
+        data_type=str(item.get("data_type", "int16")),
+        byte_order=str(item.get("byte_order", "high_byte_first")),
+        enabled=_bool(item.get("enabled"), True),
+    )
+
+
+def _format_name(pattern: str, *, device: str, index: int, ordinal: int) -> str:
+    return pattern.format(device=device, index=index, ordinal=ordinal)
+
+
+def _expand_groups(data: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Expand reusable templates/device_groups into normal devices and mappings.
+
+    Expanded entries use the same schema as top-level ``devices`` and ``mappings``.
+    This keeps the rest of the application unaware of bulk-generation syntax.
+    """
+    templates = data.get("templates", {}) or {}
+    devices: list[dict[str, Any]] = []
+    mappings: list[dict[str, Any]] = []
+
+    for group in data.get("device_groups", []) or []:
+        template_name = group["template"]
+        if template_name not in templates:
+            raise ValueError(f"Unknown template: {template_name}")
+
+        template = templates[template_name] or {}
+        count = int(group["count"])
+        if count < 1:
+            raise ValueError(f"device_group {template_name}: count must be at least 1")
+
+        start_index = int(group.get("start_index", 1))
+        name_pattern = str(group.get("name_pattern", "Device{index:02d}"))
+
+        explicit_slave_ids = group.get("slave_ids")
+        if explicit_slave_ids is not None:
+            slave_ids = [int(x) for x in explicit_slave_ids]
+            if len(slave_ids) != count:
+                raise ValueError(
+                    f"device_group {template_name}: slave_ids length must equal count"
+                )
+        else:
+            slave_start = int(group.get("slave_start", 1))
+            slave_step = int(group.get("slave_step", 1))
+            slave_ids = [slave_start + n * slave_step for n in range(count)]
+
+        for ordinal in range(count):
+            index = start_index + ordinal
+            device_name = _format_name(
+                name_pattern, device="", index=index, ordinal=ordinal
+            )
+
+            device = {
+                "name": device_name,
+                "connection": group["connection"],
+                "slave_id": slave_ids[ordinal],
+                "period": group.get("period", template.get("period", 10)),
+                "timeout": group.get("timeout", template.get("timeout", 1)),
+                "enabled": group.get("enabled", template.get("enabled", True)),
+                "requests": deepcopy(template.get("requests", [])),
+            }
+            devices.append(device)
+
+            for mapping_template in template.get("mappings", []) or []:
+                mapping = {
+                    "name": _format_name(
+                        str(mapping_template.get("name", "{device}_{request}")),
+                        device=device_name,
+                        index=index,
+                        ordinal=ordinal,
+                    ),
+                    "device": device_name,
+                    "request": mapping_template["request"],
+                    "register_type": mapping_template["register_type"],
+                    "register": int(mapping_template["start_register"])
+                    + ordinal * int(mapping_template.get("step", 1)),
+                    "enabled": mapping_template.get(
+                        "enabled", group.get("mapping_enabled", True)
+                    ),
+                }
+                mappings.append(mapping)
+
+    return devices, mappings
 
 
 def load_project(path: str | Path) -> Project:
@@ -32,21 +123,13 @@ def load_project(path: str | Path) -> Project:
             )
         )
 
+    expanded_devices, expanded_mappings = _expand_groups(data)
+    raw_devices = list(data.get("devices", []) or []) + expanded_devices
+    raw_mappings = list(data.get("mappings", []) or []) + expanded_mappings
+
     devices = []
-    for item in data.get("devices", []):
-        requests = []
-        for req in item.get("requests", []):
-            requests.append(
-                Request(
-                    name=req["name"],
-                    function=FunctionCode(int(req["function"])),
-                    register=int(req["register"]),
-                    count=int(req.get("count", 1)),
-                    data_type=str(req.get("data_type", "int16")),
-                    byte_order=str(req.get("byte_order", "high_byte_first")),
-                    enabled=_bool(req.get("enabled"), True),
-                )
-            )
+    for item in raw_devices:
+        requests = [_request(req) for req in item.get("requests", [])]
         devices.append(
             Device(
                 name=item["name"],
@@ -68,7 +151,7 @@ def load_project(path: str | Path) -> Project:
             register_type=str(item["register_type"]),
             enabled=_bool(item.get("enabled"), True),
         )
-        for item in data.get("mappings", [])
+        for item in raw_mappings
     ]
 
     return Project(connections=connections, devices=devices, mappings=mappings)
