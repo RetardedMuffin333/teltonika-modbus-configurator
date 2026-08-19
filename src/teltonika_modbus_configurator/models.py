@@ -31,6 +31,8 @@ class SerialConnection:
     databits: int = 8
     parity: str = "none"
     stopbits: int = 2
+    # RutOS UCI section ID when imported from a live/config export.
+    source_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -46,6 +48,7 @@ class Request:
     values: str | None = None
     # Exact RutOS token retained when an imported datatype is not decoded yet.
     raw_data_type: str | None = None
+    source_id: str | None = None
 
     @property
     def count_or_values(self) -> str:
@@ -63,6 +66,7 @@ class Device:
     timeout: int = 1
     enabled: bool = True
     requests: list[Request] = field(default_factory=list)
+    source_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -76,6 +80,7 @@ class ServerMapping:
     permissions: str = "r"  # r, w, rw
     data_type: str = "int16"
     count: int = 1
+    source_id: str | None = None
 
 
 @dataclass(slots=True)
