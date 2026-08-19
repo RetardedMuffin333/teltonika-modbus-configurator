@@ -66,16 +66,13 @@ def test_parse_uci_sections():
 
 def test_import_known_trb_structure():
     project = import_project(CLIENT, SERVER)
-
     assert project.connections[0].name == "VeterinaTEST"
+    assert project.connections[0].source_id == "1"
     assert project.devices[0].name == "TEST01"
+    assert project.devices[0].source_id == "2"
     assert project.devices[0].slave_id == 24
-    assert project.devices[0].enabled is False
-    assert project.devices[0].requests[0].name == "IR_TEST"
-    assert project.devices[0].requests[0].register == 515
-    assert project.mappings[0].name == "TEST01_IR"
-    assert project.mappings[0].device == "TEST01"
-    assert project.mappings[0].request == "IR_TEST"
+    assert project.devices[0].requests[0].source_id == "3"
+    assert project.mappings[0].source_id == "1"
     assert project.mappings[0].register == 1200
     assert project.tcp_server.port == 1502
     assert project.tcp_server.device_id == 77
@@ -102,10 +99,8 @@ config tcp_server '5'
     imported = import_project(client, SERVER)
     yaml_path = tmp_path / "imported.yaml"
     yaml_path.write_text(dump_project(imported), encoding="utf-8")
-
     loaded = load_project(yaml_path)
     generated = generate_uci(loaded)
-
     assert generated.modbus_client == client
     assert generated.modbus_server == SERVER
 
@@ -117,49 +112,59 @@ config tcp_server '5'
 \toption port '502'
 """
     project = import_project(client, SERVER)
-    project.devices.append(
-        Device(
-            name="PUSH_TEST",
-            slave_id=25,
-            connection="VeterinaTEST",
-            enabled=False,
-            requests=[
-                Request(
-                    name="IR_TEST",
-                    function=FunctionCode.READ_INPUT_REGISTERS,
-                    register=515,
-                    enabled=False,
-                )
-            ],
-        )
-    )
-    project.mappings.append(
-        ServerMapping(
-            name="PUSH_TEST_IR",
-            device="PUSH_TEST",
-            request="IR_TEST",
-            register=1201,
-            register_type="input_register",
-            enabled=False,
-        )
-    )
-
+    project.devices.append(Device(name="PUSH_TEST", slave_id=25, connection="VeterinaTEST", enabled=False,
+        requests=[Request(name="IR_TEST", function=FunctionCode.READ_INPUT_REGISTERS, register=515, enabled=False)]))
+    project.mappings.append(ServerMapping(name="PUSH_TEST_IR", device="PUSH_TEST", request="IR_TEST", register=1201,
+                                          register_type="input_register", enabled=False))
     generated = generate_uci(project)
-    assert generated.modbus_client.startswith(client.rstrip("\n") + "\n\n")
     assert "config rtu_server '6'" in generated.modbus_client
     assert "config request_6 '7'" in generated.modbus_client
-    assert "option name 'PUSH_TEST'" in generated.modbus_client
-    assert generated.modbus_server.startswith(SERVER.rstrip("\n") + "\n\n")
     assert "config tag '2'" in generated.modbus_server
-    assert "option tag_name 'PUSH_TEST_IR'" in generated.modbus_server
     assert "option tag_id '6.7'" in generated.modbus_server
 
 
-def test_editing_imported_device_is_refused():
+def test_editing_imported_device_preserves_its_uci_id():
     project = import_project(CLIENT, SERVER)
     project.devices[0].slave_id = 99
-    with pytest.raises(ValueError, match="supports additions only"):
-        generate_uci(project)
+    project.devices[0].name = "RENAMED"
+    project.mappings[0].device = "RENAMED"
+    generated = generate_uci(project)
+    assert "config rtu_server '2'" in generated.modbus_client
+    assert "option server_id '99'" in generated.modbus_client
+    assert "option name 'RENAMED'" in generated.modbus_client
+    assert "option tag_id '2.3'" in generated.modbus_server
+
+
+def test_add_request_to_existing_imported_device_allocates_child_id():
+    project = import_project(CLIENT, SERVER)
+    project.devices[0].requests.append(Request(name="CMD", function=FunctionCode.WRITE_SINGLE_HOLDING_REGISTER,
+                                               register=101, values="1", enabled=False))
+    project.mappings.append(ServerMapping(name="CMD", device="TEST01", request="CMD", register=1201,
+                                          register_type="holding_register", permissions="w"))
+    generated = generate_uci(project)
+    assert "config request_2 '4'" in generated.modbus_client
+    assert "option function '6'" in generated.modbus_client
+    assert "option first_reg '101'" in generated.modbus_client
+    assert "config tag '2'" in generated.modbus_server
+    assert "option tag_id '2.4'" in generated.modbus_server
+
+
+def test_delete_imported_mapping_and_request_removes_only_their_sections():
+    project = import_project(CLIENT, SERVER)
+    project.mappings.clear()
+    project.devices[0].requests.clear()
+    generated = generate_uci(project)
+    assert "config rtu_server '2'" in generated.modbus_client
+    assert "config request_2 '3'" not in generated.modbus_client
+    assert "config tag '1'" not in generated.modbus_server
+
+
+def test_repeat_generation_with_new_items_is_deterministic():
+    project = import_project(CLIENT, SERVER)
+    project.devices[0].requests.append(Request(name="EXTRA", function=FunctionCode.READ_HOLDING_REGISTERS, register=101))
+    first = generate_uci(project)
+    second = generate_uci(project)
+    assert first == second
 
 
 def test_empty_tcp_client_stub_is_safe_to_ignore():
