@@ -11,7 +11,8 @@ def project_to_dict(project: Project) -> dict:
     data = {
         "connections": [
             {"name": c.name, "type": "serial", "device": c.device, "baudrate": c.baudrate,
-             "databits": c.databits, "parity": c.parity, "stopbits": c.stopbits}
+             "databits": c.databits, "parity": c.parity, "stopbits": c.stopbits,
+             **({"source_id": c.source_id} if c.source_id is not None else {})}
             for c in project.connections
         ],
         "tcp_server": {
@@ -24,6 +25,7 @@ def project_to_dict(project: Project) -> dict:
             {
                 "name": d.name, "connection": d.connection, "slave_id": d.slave_id,
                 "period": d.period, "timeout": d.timeout, "enabled": d.enabled,
+                **({"source_id": d.source_id} if d.source_id is not None else {}),
                 "requests": [
                     {
                         "name": r.name, "function": int(r.function), "register": r.register,
@@ -31,6 +33,7 @@ def project_to_dict(project: Project) -> dict:
                         "enabled": r.enabled,
                         **({"values": r.values} if r.values is not None else {}),
                         **({"raw_data_type": r.raw_data_type} if r.raw_data_type is not None else {}),
+                        **({"source_id": r.source_id} if r.source_id is not None else {}),
                     }
                     for r in d.requests
                 ],
@@ -42,6 +45,7 @@ def project_to_dict(project: Project) -> dict:
                 "name": m.name, "device": m.device, "request": m.request,
                 "register_type": m.register_type, "register": m.register, "enabled": m.enabled,
                 "permissions": m.permissions, "data_type": m.data_type, "count": m.count,
+                **({"source_id": m.source_id} if m.source_id is not None else {}),
             }
             for m in project.mappings
         ],
