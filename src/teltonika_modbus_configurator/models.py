@@ -9,6 +9,18 @@ class FunctionCode(IntEnum):
     READ_DISCRETE_INPUTS = 2
     READ_HOLDING_REGISTERS = 3
     READ_INPUT_REGISTERS = 4
+    WRITE_SINGLE_COIL = 5
+    WRITE_SINGLE_HOLDING_REGISTER = 6
+    WRITE_MULTIPLE_COILS = 15
+    WRITE_MULTIPLE_HOLDING_REGISTERS = 16
+
+    @property
+    def is_read(self) -> bool:
+        return int(self) in {1, 2, 3, 4}
+
+    @property
+    def is_write(self) -> bool:
+        return int(self) in {5, 6, 15, 16}
 
 
 @dataclass(slots=True)
@@ -30,6 +42,16 @@ class Request:
     data_type: str = "int16"
     byte_order: str = "high_byte_first"
     enabled: bool = True
+    # For FC05/06/15/16 RutOS reuses reg_count as the value/value list.
+    values: str | None = None
+    # Exact RutOS token retained when an imported datatype is not decoded yet.
+    raw_data_type: str | None = None
+
+    @property
+    def count_or_values(self) -> str:
+        if self.function.is_write and self.values is not None:
+            return self.values
+        return str(self.count)
 
 
 @dataclass(slots=True)
@@ -51,6 +73,9 @@ class ServerMapping:
     register: int
     register_type: str
     enabled: bool = True
+    permissions: str = "r"  # r, w, rw
+    data_type: str = "int16"
+    count: int = 1
 
 
 @dataclass(slots=True)

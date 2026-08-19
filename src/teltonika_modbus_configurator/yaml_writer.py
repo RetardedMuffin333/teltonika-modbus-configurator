@@ -10,15 +10,8 @@ from .models import Project
 def project_to_dict(project: Project) -> dict:
     data = {
         "connections": [
-            {
-                "name": c.name,
-                "type": "serial",
-                "device": c.device,
-                "baudrate": c.baudrate,
-                "databits": c.databits,
-                "parity": c.parity,
-                "stopbits": c.stopbits,
-            }
+            {"name": c.name, "type": "serial", "device": c.device, "baudrate": c.baudrate,
+             "databits": c.databits, "parity": c.parity, "stopbits": c.stopbits}
             for c in project.connections
         ],
         "tcp_server": {
@@ -29,21 +22,15 @@ def project_to_dict(project: Project) -> dict:
         },
         "devices": [
             {
-                "name": d.name,
-                "connection": d.connection,
-                "slave_id": d.slave_id,
-                "period": d.period,
-                "timeout": d.timeout,
-                "enabled": d.enabled,
+                "name": d.name, "connection": d.connection, "slave_id": d.slave_id,
+                "period": d.period, "timeout": d.timeout, "enabled": d.enabled,
                 "requests": [
                     {
-                        "name": r.name,
-                        "function": int(r.function),
-                        "register": r.register,
-                        "count": r.count,
-                        "data_type": r.data_type,
-                        "byte_order": r.byte_order,
+                        "name": r.name, "function": int(r.function), "register": r.register,
+                        "count": r.count, "data_type": r.data_type, "byte_order": r.byte_order,
                         "enabled": r.enabled,
+                        **({"values": r.values} if r.values is not None else {}),
+                        **({"raw_data_type": r.raw_data_type} if r.raw_data_type is not None else {}),
                     }
                     for r in d.requests
                 ],
@@ -52,28 +39,17 @@ def project_to_dict(project: Project) -> dict:
         ],
         "mappings": [
             {
-                "name": m.name,
-                "device": m.device,
-                "request": m.request,
-                "register_type": m.register_type,
-                "register": m.register,
-                "enabled": m.enabled,
+                "name": m.name, "device": m.device, "request": m.request,
+                "register_type": m.register_type, "register": m.register, "enabled": m.enabled,
+                "permissions": m.permissions, "data_type": m.data_type, "count": m.count,
             }
             for m in project.mappings
         ],
     }
     if project.source_uci is not None:
-        data["source_uci"] = {
-            "modbus_client": project.source_uci.modbus_client,
-            "modbus_server": project.source_uci.modbus_server,
-        }
+        data["source_uci"] = {"modbus_client": project.source_uci.modbus_client, "modbus_server": project.source_uci.modbus_server}
     return data
 
 
 def dump_project(project: Project) -> str:
-    return yaml.safe_dump(
-        project_to_dict(project),
-        sort_keys=False,
-        allow_unicode=True,
-        default_flow_style=False,
-    )
+    return yaml.safe_dump(project_to_dict(project), sort_keys=False, allow_unicode=True, default_flow_style=False)
