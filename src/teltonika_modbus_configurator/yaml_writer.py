@@ -44,6 +44,7 @@ def project_to_dict(project: Project) -> dict:
                         "data_type": r.data_type,
                         "byte_order": r.byte_order,
                         "enabled": r.enabled,
+                        **({"values": r.values} if r.values is not None else {}),
                     }
                     for r in d.requests
                 ],
@@ -58,6 +59,9 @@ def project_to_dict(project: Project) -> dict:
                 "register_type": m.register_type,
                 "register": m.register,
                 "enabled": m.enabled,
+                "permissions": m.permissions,
+                "data_type": m.data_type,
+                "count": m.count,
             }
             for m in project.mappings
         ],
@@ -71,9 +75,4 @@ def project_to_dict(project: Project) -> dict:
 
 
 def dump_project(project: Project) -> str:
-    return yaml.safe_dump(
-        project_to_dict(project),
-        sort_keys=False,
-        allow_unicode=True,
-        default_flow_style=False,
-    )
+    return yaml.safe_dump(data=project_to_dict(project), sort_keys=False, allow_unicode=True, default_flow_style=False)
