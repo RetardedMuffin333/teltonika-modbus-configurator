@@ -43,8 +43,9 @@ class Request:
     byte_order: str = "high_byte_first"
     enabled: bool = True
     # For FC05/06/15/16 RutOS reuses reg_count as the value/value list.
-    # Keeping it separate from count avoids confusing a write value with a read length.
     values: str | None = None
+    # Exact RutOS token retained when an imported datatype is not decoded yet.
+    raw_data_type: str | None = None
 
     @property
     def count_or_values(self) -> str:
