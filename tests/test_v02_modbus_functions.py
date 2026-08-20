@@ -1,5 +1,6 @@
 from teltonika_modbus_configurator.models import (
-    Device, FunctionCode, Project, Request, SerialConnection, ServerMapping
+    Device, FunctionCode, Project, Request, SerialConnection, ServerMapping,
+    permissions_for_function,
 )
 from teltonika_modbus_configurator.uci_generator import generate_uci
 from teltonika_modbus_configurator.uci_parser import import_project
@@ -12,6 +13,13 @@ def base_project(request: Request, mapping: ServerMapping) -> Project:
         devices=[Device("D1", 1, "RS485", requests=[request])],
         mappings=[mapping],
     )
+
+
+def test_permissions_are_derived_from_function_direction():
+    assert permissions_for_function(FunctionCode.READ_HOLDING_REGISTERS) == "r"
+    assert permissions_for_function(FunctionCode.READ_INPUT_REGISTERS) == "r"
+    assert permissions_for_function(FunctionCode.WRITE_SINGLE_COIL) == "w"
+    assert permissions_for_function(FunctionCode.WRITE_SINGLE_HOLDING_REGISTER) == "w"
 
 
 def test_fc06_write_only_mapping_generation():
@@ -56,7 +64,7 @@ def test_direction_and_register_area_validation():
     messages = validate_project(base_project(request, mapping))
     text = "\n".join(m.message for m in messages)
     assert "does not match FC04" in text
-    assert "cannot be exposed Write-Only" in text
+    assert "access is automatic for FC04 and must be 'r'" in text
 
 
 def test_write_request_import_uses_values_not_count():
