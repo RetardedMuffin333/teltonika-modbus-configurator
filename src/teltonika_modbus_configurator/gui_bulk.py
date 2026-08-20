@@ -7,13 +7,12 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
 from .bulk import BulkMappingSpec, BulkRequestSpec, BulkSpec, apply_bulk, generate_bulk, validate_bulk_spec
-from .models import FunctionCode, Project
+from .models import FunctionCode, Project, permissions_for_function
 from .register_allocator import next_free_register
 
 REGISTER_TYPES = ("coil", "discrete_input", "holding_register", "input_register")
 BYTE_ORDERS = ("none", "high_byte_first", "low_byte_first")
 REQUEST_DATA_TYPES = ("int8", "uint8", "int16", "uint16", "ascii", "hex", "bool", "pdu")
-PERMISSIONS = ("r", "w", "rw")
 TCP_DATA_TYPES = ("binary", "string", "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "float64")
 FUNCTIONS = ("1", "2", "3", "4", "5", "6", "15", "16")
 
@@ -81,7 +80,7 @@ class BulkGeneratorWindow(tk.Toplevel):
         ttk.Button(rb, text="Add request", command=self.add_request).pack(side="left", padx=3); ttk.Button(rb, text="Edit request", command=self.edit_request).pack(side="left", padx=3); ttk.Button(rb, text="Delete request", command=self.delete_request).pack(side="left", padx=3)
 
         self.map_tree = ttk.Treeview(map_frame, columns=("name", "request", "type", "start", "step", "access", "dtype", "count"), show="headings", selectmode="browse")
-        for key, title, width in (("name", "Name pattern", 190), ("request", "Request", 120), ("type", "TCP type", 115), ("start", "Start", 70), ("step", "Step", 55), ("access", "Access", 60), ("dtype", "Data type", 80), ("count", "Count", 55)):
+        for key, title, width in (("name", "Name pattern", 190), ("request", "Request", 120), ("type", "TCP type", 115), ("start", "Start", 70), ("step", "Step", 55), ("access", "Access (auto)", 80), ("dtype", "Data type", 80), ("count", "Count", 55)):
             self.map_tree.heading(key, text=title); self.map_tree.column(key, width=width, anchor="w")
         self.map_tree.pack(fill="both", expand=True)
         mb = ttk.Frame(map_frame); mb.pack(fill="x", pady=(5, 0))
@@ -97,7 +96,7 @@ class BulkGeneratorWindow(tk.Toplevel):
         related = [m for m in self.project.mappings if m.device == device.name]
         self.mappings = [BulkMappingSpec(name_pattern=self._suggest_mapping_pattern(m.name, device.name, m.request), request=m.request, register_type=m.register_type,
                                          start_register=next_free_register(self.project, register_type=m.register_type, request_name=m.request, default=m.register),
-                                         step=max(1, m.count), enabled=m.enabled, permissions=m.permissions, data_type=m.data_type, count=m.count) for m in related]
+                                         step=max(1, m.count), enabled=m.enabled, data_type=m.data_type, count=m.count) for m in related]
         self._refresh_tables()
 
     @staticmethod
@@ -143,12 +142,17 @@ class BulkGeneratorWindow(tk.Toplevel):
         if any(m.request == name for m in self.mappings): messagebox.showerror("Request", "Delete or change mappings that reference this request first.", parent=self); return
         del self.requests[i]; self._refresh_tables()
 
+    def _access_for_request(self, request_name: str) -> str:
+        request = next((r for r in self.requests if r.name == request_name), None)
+        if request is None: raise ValueError(f"Unknown source request {request_name!r}")
+        return permissions_for_function(request.function)
+
     def _mapping_dialog(self, initial=None):
         requests = tuple(r.name for r in self.requests) or ("",)
         dlg = RowDialog(self, "Bulk TCP mapping", [("name_pattern", "Name pattern", None), ("request", "Source request", requests), ("register_type", "TCP register type", REGISTER_TYPES),
-                                                       ("start_register", "Start register", None), ("step", "Step per device", None), ("permissions", "Access", PERMISSIONS),
+                                                       ("start_register", "Start register", None), ("step", "Step per device", None),
                                                        ("data_type", "Register data type", TCP_DATA_TYPES), ("count", "Value count", None)],
-                        initial or {"name_pattern": "{device}_{request}", "request": requests[0], "register_type": "input_register", "start_register": "1025", "step": "1", "permissions": "r", "data_type": "int16", "count": "1"})
+                        initial or {"name_pattern": "{device}_{request}", "request": requests[0], "register_type": "input_register", "start_register": "1025", "step": "1", "data_type": "int16", "count": "1"})
         return dlg.values
 
     def add_mapping(self):
@@ -156,7 +160,7 @@ class BulkGeneratorWindow(tk.Toplevel):
         v = self._mapping_dialog()
         if not v: return
         try:
-            self.mappings.append(BulkMappingSpec(name_pattern=v["name_pattern"], request=v["request"], register_type=v["register_type"], start_register=int(v["start_register"]), step=int(v["step"]), permissions=v["permissions"], data_type=v["data_type"], count=int(v["count"] or 1)))
+            self.mappings.append(BulkMappingSpec(name_pattern=v["name_pattern"], request=v["request"], register_type=v["register_type"], start_register=int(v["start_register"]), step=int(v["step"]), permissions=self._access_for_request(v["request"]), data_type=v["data_type"], count=int(v["count"] or 1)))
             self._refresh_tables()
         except Exception as exc: messagebox.showerror("Mapping", str(exc), parent=self)
 
@@ -167,7 +171,7 @@ class BulkGeneratorWindow(tk.Toplevel):
         v = self._mapping_dialog(initial)
         if not v: return
         try:
-            self.mappings[i] = BulkMappingSpec(name_pattern=v["name_pattern"], request=v["request"], register_type=v["register_type"], start_register=int(v["start_register"]), step=int(v["step"]), enabled=m.enabled, permissions=v["permissions"], data_type=v["data_type"], count=int(v["count"] or 1)); self._refresh_tables()
+            self.mappings[i] = BulkMappingSpec(name_pattern=v["name_pattern"], request=v["request"], register_type=v["register_type"], start_register=int(v["start_register"]), step=int(v["step"]), enabled=m.enabled, permissions=self._access_for_request(v["request"]), data_type=v["data_type"], count=int(v["count"] or 1)); self._refresh_tables()
         except Exception as exc: messagebox.showerror("Mapping", str(exc), parent=self)
 
     def delete_mapping(self):
@@ -179,7 +183,7 @@ class BulkGeneratorWindow(tk.Toplevel):
         self.req_tree.delete(*self.req_tree.get_children())
         for i, r in enumerate(self.requests): self.req_tree.insert("", "end", iid=str(i), values=(r.name, int(r.function), r.register, r.values if r.function.is_write else r.count, r.raw_data_type or r.data_type, r.byte_order))
         self.map_tree.delete(*self.map_tree.get_children())
-        for i, m in enumerate(self.mappings): self.map_tree.insert("", "end", iid=str(i), values=(m.name_pattern, m.request, m.register_type, m.start_register, m.step, m.permissions, m.data_type, m.count or 1))
+        for i, m in enumerate(self.mappings): self.map_tree.insert("", "end", iid=str(i), values=(m.name_pattern, m.request, m.register_type, m.start_register, m.step, self._access_for_request(m.request), m.data_type, m.count or 1))
 
     def _spec(self) -> BulkSpec:
         explicit = self.vars["slave_ids"].get().strip(); slave_ids = [int(x.strip()) for x in explicit.split(",") if x.strip()] if explicit else None
