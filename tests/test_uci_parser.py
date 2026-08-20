@@ -167,7 +167,7 @@ def test_repeat_generation_with_new_items_is_deterministic():
     assert first == second
 
 
-def test_empty_tcp_client_stub_is_safe_to_ignore():
+def test_empty_tcp_client_stub_is_safe_to_import():
     client = CLIENT + """
 config tcp_server '5'
 \toption server_id '1'
@@ -175,12 +175,16 @@ config tcp_server '5'
 """
     project = import_project(client, SERVER)
     assert project.devices[0].name == "TEST01"
+    assert len(project.tcp_clients) == 1
+    assert project.tcp_clients[0].source_id == "5"
 
 
-def test_active_tcp_client_is_not_silently_dropped():
+def test_active_tcp_client_is_modeled_in_v03():
     client = CLIENT + """
 config tcp_server '5'
+\toption name 'TCP_DEVICE'
 \toption server_id '1'
+\toption ip '192.168.1.50'
 \toption port '502'
 
 config request_5 '6'
@@ -190,5 +194,10 @@ config request_5 '6'
 \toption reg_count '1'
 \toption first_reg '10'
 """
-    with pytest.raises(ValueError, match="Active Modbus TCP Client"):
-        import_project(client, SERVER)
+    project = import_project(client, SERVER)
+    assert len(project.tcp_clients) == 1
+    assert project.tcp_clients[0].name == "TCP_DEVICE"
+    assert project.tcp_clients[0].host == "192.168.1.50"
+    assert project.tcp_clients[0].requests[0].name == "TCP_IR"
+    generated = generate_uci(project)
+    assert generated.modbus_client == client
