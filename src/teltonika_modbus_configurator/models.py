@@ -23,6 +23,11 @@ class FunctionCode(IntEnum):
         return int(self) in {5, 6, 15, 16}
 
 
+def permissions_for_function(function: FunctionCode) -> str:
+    """Return the RutOS Modbus Server access derived from the source request."""
+    return "r" if function.is_read else "w"
+
+
 @dataclass(slots=True)
 class SerialConnection:
     name: str
@@ -31,7 +36,6 @@ class SerialConnection:
     databits: int = 8
     parity: str = "none"
     stopbits: int = 2
-    # RutOS UCI section ID when imported from a live/config export.
     source_id: str | None = None
 
 
@@ -44,9 +48,7 @@ class Request:
     data_type: str = "int16"
     byte_order: str = "high_byte_first"
     enabled: bool = True
-    # For FC05/06/15/16 RutOS reuses reg_count as the value/value list.
     values: str | None = None
-    # Exact RutOS token retained when an imported datatype is not decoded yet.
     raw_data_type: str | None = None
     source_id: str | None = None
 
@@ -77,7 +79,9 @@ class ServerMapping:
     register: int
     register_type: str
     enabled: bool = True
-    permissions: str = "r"  # r, w, rw
+    # Stored for lossless live import/YAML compatibility. The GUI/generator derive
+    # the effective value from the source request function (read -> r, write -> w).
+    permissions: str = "r"
     data_type: str = "int16"
     count: int = 1
     source_id: str | None = None
