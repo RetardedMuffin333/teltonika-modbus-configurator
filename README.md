@@ -40,7 +40,7 @@ atvise Connect / other Modbus TCP client
   - Bool, ASCII, Hex and PDU where supported by RutOS
 - Lossless preservation of imported RutOS datatype tokens not yet decoded by the configurator
 - All four Modbus TCP Server areas: Coil, Discrete Input, Holding Register, Input Register
-- TCP mapping permissions: Read-Only, Write-Only, Read-Write
+- TCP mapping access derived automatically from the source request: read functions → Read-Only, write functions → Write-Only
 - TCP mapping datatypes including Binary, String, Bool, integer widths and FLOAT32/FLOAT64 metadata
 - Automatic internal UCI IDs and `tag_id` relationships
 - Import existing live RutOS Modbus configuration over SSH
@@ -54,7 +54,7 @@ atvise Connect / other Modbus TCP client
 - Bulk support for read and write requests
 - Automatic next-free TCP register allocation
 - Teltonika TCP register validation: `1025..65536`
-- Validation of function code vs Modbus register area and read/write permissions
+- Validation of function code vs Modbus register area and automatically derived access
 - Collision validation for devices, Slave IDs, symbol names and TCP register ranges
 - Exact RutOS UCI preview
 - Live unified diff against a TRB
@@ -105,7 +105,7 @@ The GUI supports:
 - TCP Server mappings editor
 - TCP Server settings
 - Read and write request creation
-- Read-Only / Write-Only / Read-Write TCP mappings
+- Automatic Read-Only / Write-Only mapping access shown in the mapping tables
 - Bulk Device Generator using any existing device as a template
 - Sequential or explicit/non-sequential Slave IDs
 - Automatic next-free TCP mapping proposals
@@ -115,6 +115,8 @@ The GUI supports:
 - Guarded Apply requiring explicit `APPLY` confirmation
 - Rollback to a saved remote snapshot
 - Export of atvise Connect `.Symbol` files
+
+RutOS determines Modbus Server access from the source Modbus Client request. The configurator mirrors that behavior: access is displayed but is not user-editable. FC01–FC04 mappings are Read-Only; FC05/06/15/16 mappings are Write-Only.
 
 ## Read/write command-feedback pattern
 
@@ -182,7 +184,7 @@ The generator supports sequential and explicit/non-sequential Slave IDs and vali
 - overlapping TCP register ranges;
 - TCP registers outside `1025..65536`;
 - invalid function/register-area combinations;
-- invalid read/write mapping permissions.
+- mapping access against the source request direction.
 
 ## atvise Connect symbol export
 
@@ -287,7 +289,7 @@ v0.1.0 was validated on a real Teltonika TRB145 running RutOS 7.24.2 with a fres
 
 ### v0.2.0
 
-v0.2 retains the v0.1 baseline and adds generated read/write request support and stable editing of imported live UCI. Release-candidate validation includes clean generated diffs for FC06 Write-Only command mappings and FC03 Read-Only feedback mappings targeting the same physical holding register. Final hardware acceptance should be completed before the release branch is frozen.
+v0.2 retains the proven v0.1 deployment baseline and extends the configurator with full write-request generation, automatic mapping access, and stable editing of imported live UCI.
 
 ## Security and public-repository notes
 
