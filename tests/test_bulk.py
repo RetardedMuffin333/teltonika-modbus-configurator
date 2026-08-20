@@ -145,4 +145,4 @@ def test_bulk_rejects_wrong_tcp_area_for_write_request():
         requests=[BulkRequestSpec("Cmd", FunctionCode.WRITE_SINGLE_COIL, 10, data_type="bool", byte_order="none", values="1")],
         mappings=[BulkMappingSpec("{device}_Cmd", "Cmd", "holding_register", 1200, data_type="bool")],
     )
-    assert any("maps naturally to TCP coil" in error for error in validate_bulk_spec(project, spec))
+    assert any("must use TCP type 'coil'" in error for error in validate_bulk_spec(project, spec))
