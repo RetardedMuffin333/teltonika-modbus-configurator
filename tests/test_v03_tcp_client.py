@@ -1,5 +1,3 @@
-import pytest
-
 from teltonika_modbus_configurator.models import (
     FunctionCode, Project, Request, ServerMapping, TcpClientDevice
 )
@@ -88,11 +86,15 @@ def test_tcp_client_yaml_roundtrip_preserves_source(tmp_path):
     assert generated.modbus_server == SERVER
 
 
-def test_fresh_tcp_client_generation_waits_for_verified_uci_schema():
+def test_fresh_tcp_client_generation_uses_verified_uci_schema():
     request = Request("Temp", FunctionCode.READ_INPUT_REGISTERS, 10)
     client = TcpClientDevice("ChillerTCP", server_id=117, host="10.33.22.50", requests=[request])
     mapping = ServerMapping("Temp", "ChillerTCP", "Temp", 1200, "input_register", permissions="r")
     project = Project(tcp_clients=[client], mappings=[mapping])
     assert validate_project(project) == []
-    with pytest.raises(ValueError, match="Fresh Modbus TCP Client generation"):
-        generate_uci(project)
+    generated = generate_uci(project)
+    assert "config tcp_server '1'" in generated.modbus_client
+    assert "option server_id '117'" in generated.modbus_client
+    assert "option dev_ipaddr '10.33.22.50'" in generated.modbus_client
+    assert "config request_1 '2'" in generated.modbus_client
+    assert "option tag_id '1.2'" in generated.modbus_server

@@ -171,7 +171,7 @@ def import_project(modbus_client: str, modbus_server: str, *, attach_source: boo
             tcp_clients.append(TcpClientDevice(
                 name=device_name,
                 server_id=int(o.get("server_id", "1")),
-                host=_first(o, "ip", "address", "host", "server_ip", default=""),
+                host=_first(o, "dev_ipaddr", "ip", "address", "host", "server_ip", default=""),
                 port=int(o.get("port", "502")),
                 period=int(o.get("period", "60")),
                 timeout=int(o.get("timeout", "5")),
