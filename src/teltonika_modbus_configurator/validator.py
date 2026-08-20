@@ -6,11 +6,14 @@ from .models import FunctionCode, Project, Request, permissions_for_function
 
 TELTONIKA_TCP_REGISTER_MIN = 1025
 TELTONIKA_TCP_REGISTER_MAX = 65536
-REQUEST_DATA_TYPES = {"int8", "uint8", "int16", "uint16", "ascii", "hex", "bool", "pdu", "raw"}
+REQUEST_DATA_TYPES = {"int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "ascii", "hex", "bool", "pdu", "raw"}
 REQUEST_TYPE_ORDERS = {
     "int8": {"none"}, "uint8": {"none"},
     "int16": {"high_byte_first", "low_byte_first"},
     "uint16": {"high_byte_first", "low_byte_first"},
+    "int32": {"1234", "2143", "3412", "4321"},
+    "uint32": {"1234", "2143", "3412", "4321"},
+    "float32": {"1234", "2143", "3412", "4321"},
     "ascii": {"none"}, "hex": {"none"}, "bool": {"none"}, "pdu": {"none"}, "raw": {"raw"},
 }
 TCP_DATA_TYPES = {"binary", "string", "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "float64"}
