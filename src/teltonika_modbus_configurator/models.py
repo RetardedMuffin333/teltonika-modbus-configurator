@@ -77,13 +77,16 @@ class Device:
 class TcpClientDevice:
     """Remote Modbus TCP server queried by RutOS Modbus TCP Client.
 
+    RutOS uses ``server_id`` for the Modbus address while the GUI uses the more
+    familiar ``unit_id`` label. Both fields are kept synchronized.
+
     `raw_options` intentionally retains every imported UCI option. v0.3 starts by
     making mixed RTU + TCP live imports lossless; fresh TCP-client generation is
     enabled only after the exact RutOS option names have been verified on hardware.
     """
 
     name: str
-    server_id: int
+    server_id: int = 1
     host: str = ""
     port: int = 502
     period: int = 60
@@ -92,6 +95,25 @@ class TcpClientDevice:
     requests: list[Request] = field(default_factory=list)
     source_id: str | None = None
     raw_options: dict[str, str] = field(default_factory=dict)
+    unit_id: int | None = None
+
+    def __setattr__(self, name: str, value) -> None:
+        if name == "server_id":
+            ivalue = int(value)
+            object.__setattr__(self, "server_id", ivalue)
+            if hasattr(self, "unit_id"):
+                object.__setattr__(self, "unit_id", ivalue)
+            return
+        if name == "unit_id":
+            if value is None:
+                current = self.server_id if hasattr(self, "server_id") else 1
+                object.__setattr__(self, "unit_id", current)
+            else:
+                ivalue = int(value)
+                object.__setattr__(self, "unit_id", ivalue)
+                object.__setattr__(self, "server_id", ivalue)
+            return
+        object.__setattr__(self, name, value)
 
 
 @dataclass(slots=True)
