@@ -7,12 +7,34 @@ import yaml
 from .models import Project
 
 
+def _request_dict(r) -> dict:
+    return {
+        "name": r.name,
+        "function": int(r.function),
+        "register": r.register,
+        "count": r.count,
+        "data_type": r.data_type,
+        "byte_order": r.byte_order,
+        "enabled": r.enabled,
+        **({"values": r.values} if r.values is not None else {}),
+        **({"raw_data_type": r.raw_data_type} if r.raw_data_type is not None else {}),
+        **({"source_id": r.source_id} if r.source_id is not None else {}),
+    }
+
+
 def project_to_dict(project: Project) -> dict:
     data = {
         "connections": [
-            {"name": c.name, "type": "serial", "device": c.device, "baudrate": c.baudrate,
-             "databits": c.databits, "parity": c.parity, "stopbits": c.stopbits,
-             **({"source_id": c.source_id} if c.source_id is not None else {})}
+            {
+                "name": c.name,
+                "type": "serial",
+                "device": c.device,
+                "baudrate": c.baudrate,
+                "databits": c.databits,
+                "parity": c.parity,
+                "stopbits": c.stopbits,
+                **({"source_id": c.source_id} if c.source_id is not None else {}),
+            }
             for c in project.connections
         ],
         "tcp_server": {
@@ -23,35 +45,53 @@ def project_to_dict(project: Project) -> dict:
         },
         "devices": [
             {
-                "name": d.name, "connection": d.connection, "slave_id": d.slave_id,
-                "period": d.period, "timeout": d.timeout, "enabled": d.enabled,
+                "name": d.name,
+                "connection": d.connection,
+                "slave_id": d.slave_id,
+                "period": d.period,
+                "timeout": d.timeout,
+                "enabled": d.enabled,
                 **({"source_id": d.source_id} if d.source_id is not None else {}),
-                "requests": [
-                    {
-                        "name": r.name, "function": int(r.function), "register": r.register,
-                        "count": r.count, "data_type": r.data_type, "byte_order": r.byte_order,
-                        "enabled": r.enabled,
-                        **({"values": r.values} if r.values is not None else {}),
-                        **({"raw_data_type": r.raw_data_type} if r.raw_data_type is not None else {}),
-                        **({"source_id": r.source_id} if r.source_id is not None else {}),
-                    }
-                    for r in d.requests
-                ],
+                "requests": [_request_dict(r) for r in d.requests],
             }
             for d in project.devices
         ],
+        "tcp_clients": [
+            {
+                "name": d.name,
+                "server_id": d.server_id,
+                "host": d.host,
+                "port": d.port,
+                "period": d.period,
+                "timeout": d.timeout,
+                "enabled": d.enabled,
+                **({"source_id": d.source_id} if d.source_id is not None else {}),
+                **({"raw_options": dict(d.raw_options)} if d.raw_options else {}),
+                "requests": [_request_dict(r) for r in d.requests],
+            }
+            for d in project.tcp_clients
+        ],
         "mappings": [
             {
-                "name": m.name, "device": m.device, "request": m.request,
-                "register_type": m.register_type, "register": m.register, "enabled": m.enabled,
-                "permissions": m.permissions, "data_type": m.data_type, "count": m.count,
+                "name": m.name,
+                "device": m.device,
+                "request": m.request,
+                "register_type": m.register_type,
+                "register": m.register,
+                "enabled": m.enabled,
+                "permissions": m.permissions,
+                "data_type": m.data_type,
+                "count": m.count,
                 **({"source_id": m.source_id} if m.source_id is not None else {}),
             }
             for m in project.mappings
         ],
     }
     if project.source_uci is not None:
-        data["source_uci"] = {"modbus_client": project.source_uci.modbus_client, "modbus_server": project.source_uci.modbus_server}
+        data["source_uci"] = {
+            "modbus_client": project.source_uci.modbus_client,
+            "modbus_server": project.source_uci.modbus_server,
+        }
     return data
 
 
