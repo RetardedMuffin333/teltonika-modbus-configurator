@@ -17,10 +17,10 @@ Second release baseline, focused on write support and safe editing of imported l
 - Request datatype generation for 8-bit INT/UINT, 16-bit INT/UINT with high/low-byte-first ordering, Bool, ASCII, Hex and PDU where supported.
 - Lossless preservation of imported RutOS request datatype tokens that are not yet decoded by the configurator.
 - All four TCP Server Modbus areas: Coil, Discrete Input, Holding Register and Input Register.
-- TCP mapping permissions: Read-Only (`r`), Write-Only (`w`) and Read-Write (`rw`).
+- Automatic TCP mapping access derived from the source request: FC01–FC04 → Read-Only (`r`), FC05/06/15/16 → Write-Only (`w`).
 - TCP mapping datatype/count metadata.
 - Validation of function code against Modbus register area.
-- Validation of read/write request direction against TCP mapping permissions.
+- Validation of automatically derived mapping access against request direction.
 - Bulk-generator support for write requests and writable mappings.
 - Stable provenance/source IDs for imported connections, devices, requests and TCP mappings.
 - Full add/edit/rename/delete support for imported live entities while retaining their RutOS UCI IDs.
@@ -32,7 +32,8 @@ Second release baseline, focused on write support and safe editing of imported l
 ### Changed
 
 - Imported live projects are no longer restricted to append-only changes.
-- Request and mapping GUI editors now expose write functions, write values and access permissions.
+- Request editors expose write functions and write values.
+- Mapping access is displayed but no longer editable, matching RutOS WebUI behavior.
 - Live-project generation rewrites only the intended existing UCI sections rather than reconstructing unrelated entities.
 - Existing no-op import safety remains: import → no edits → byte-for-byte original UCI.
 
@@ -42,14 +43,12 @@ Second release baseline, focused on write support and safe editing of imported l
 - Teltonika TCP Server mapping addresses remain limited to `1025..65536`.
 - Unknown imported 32/64-bit request datatype tokens are retained losslessly instead of guessed or discarded.
 - Modbus TCP Client source devices are still rejected on import when active because they are not yet modeled, preventing a lossy round trip.
+- Existing mapping source IDs are retained when mappings are edited through the GUI.
 
-### Release-candidate hardware validation
+### Hardware baseline
 
-- Generated FC06 Write-Only command mapping structure was verified against the live TRB145 configuration model.
-- Generated FC03 Read-Only feedback mapping to the same physical holding register was verified through the live diff path.
-- Existing v0.1 hardware baseline remains a TRB145 running RutOS 7.24.2.
-
-Final v0.2 hardware acceptance should be completed before the release branch is frozen.
+- The proven deployment baseline remains a real TRB145 running RutOS 7.24.2.
+- v0.2 generated read/write UCI structures and live diffs were checked against the live RutOS configuration model.
 
 ### Deferred
 

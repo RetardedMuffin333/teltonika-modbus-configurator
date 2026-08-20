@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .models import FunctionCode, Project
+from .models import FunctionCode, Project, permissions_for_function
 
 TELTONIKA_TCP_REGISTER_MIN = 1025
 TELTONIKA_TCP_REGISTER_MAX = 65536
@@ -14,7 +14,6 @@ REQUEST_TYPE_ORDERS = {
     "ascii": {"none"}, "hex": {"none"}, "bool": {"none"}, "pdu": {"none"}, "raw": {"raw"},
 }
 TCP_DATA_TYPES = {"binary", "string", "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "float64"}
-MAPPING_PERMISSIONS = {"r", "w", "rw"}
 FUNCTION_REGISTER_TYPES = {
     FunctionCode.READ_COILS: "coil", FunctionCode.READ_DISCRETE_INPUTS: "discrete_input",
     FunctionCode.READ_HOLDING_REGISTERS: "holding_register", FunctionCode.READ_INPUT_REGISTERS: "input_register",
@@ -68,13 +67,13 @@ def validate_project(project: Project) -> list[ValidationMessage]:
         if device is None: messages.append(ValidationMessage("error", f"{mapping.name}: unknown device '{mapping.device}'")); continue
         request = next((r for r in device.requests if r.name == mapping.request), None)
         if request is None: messages.append(ValidationMessage("error", f"{mapping.name}: unknown request '{mapping.request}' on {mapping.device}")); continue
-        if mapping.permissions not in MAPPING_PERMISSIONS: messages.append(ValidationMessage("error", f"{mapping.name}: permissions must be r, w or rw"))
         if mapping.data_type not in TCP_DATA_TYPES: messages.append(ValidationMessage("error", f"{mapping.name}: unsupported TCP data_type '{mapping.data_type}'"))
         if mapping.count < 1: messages.append(ValidationMessage("error", f"{mapping.name}: TCP mapping count must be at least 1"))
         expected_type = FUNCTION_REGISTER_TYPES[request.function]
         if mapping.register_type != expected_type: messages.append(ValidationMessage("error", f"{mapping.name}: {mapping.register_type} does not match FC{int(request.function):02d} source ({expected_type})"))
-        if request.function.is_read and mapping.permissions == "w": messages.append(ValidationMessage("error", f"{mapping.name}: read request cannot be exposed Write-Only"))
-        if request.function.is_write and mapping.permissions == "r": messages.append(ValidationMessage("error", f"{mapping.name}: write request cannot be exposed Read-Only"))
+        expected_access = permissions_for_function(request.function)
+        if mapping.permissions != expected_access:
+            messages.append(ValidationMessage("error", f"{mapping.name}: access is automatic for FC{int(request.function):02d} and must be '{expected_access}'"))
 
         end = mapping.register + mapping.count - 1
         if not TELTONIKA_TCP_REGISTER_MIN <= mapping.register <= TELTONIKA_TCP_REGISTER_MAX:

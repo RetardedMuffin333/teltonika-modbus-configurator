@@ -9,7 +9,7 @@ from .atvise_symbols import export_atvise_symbols
 from .gui import FormDialog, vars_for
 from .gui_bulk import BulkGeneratorWindow
 from .gui_deploy import DeploymentEditor
-from .models import FunctionCode, Request, ServerMapping
+from .models import FunctionCode, Request, ServerMapping, permissions_for_function
 
 FUNCTION_CHOICES = (
     "1 - Read coils", "2 - Read discrete inputs", "3 - Read holding registers", "4 - Read input registers",
@@ -18,7 +18,6 @@ FUNCTION_CHOICES = (
 REQUEST_DATA_TYPES = ("int8", "uint8", "int16", "uint16", "ascii", "hex", "bool", "pdu")
 BYTE_ORDERS = ("none", "high_byte_first", "low_byte_first")
 TCP_DATA_TYPES = ("binary", "string", "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "float64")
-PERMISSIONS = ("r", "w", "rw")
 REGISTER_TYPES = ("coil", "discrete_input", "holding_register", "input_register")
 
 
@@ -71,7 +70,7 @@ class ExtendedProjectEditor(DeploymentEditor):
         tab = ttk.Frame(self.tabs, padding=8); self.tabs.add(tab, text="TCP Mappings")
         self.mappings_tree = self._tree(tab, [
             ("name", "Name", 160), ("device", "Source device", 130), ("request", "Request", 130),
-            ("type", "TCP type", 120), ("register", "Register", 75), ("perm", "Access", 65),
+            ("type", "TCP type", 120), ("register", "Register", 75), ("perm", "Access (auto)", 85),
             ("dtype", "Data type", 85), ("count", "Count", 55), ("enabled", "Enabled", 65),
         ])
         self.mappings_tree.pack(fill="both", expand=True)
@@ -89,10 +88,17 @@ class ExtendedProjectEditor(DeploymentEditor):
             dtype = r.raw_data_type or r.data_type
             self.requests_tree.insert("", "end", iid=str(i), values=(r.name, int(r.function), r.register, cv, dtype, r.byte_order, "Yes" if r.enabled else "No"))
 
+    def _request_for_mapping(self, device_name: str, request_name: str):
+        device = next((d for d in self.project.devices if d.name == device_name), None)
+        if device is None: return None
+        return next((r for r in device.requests if r.name == request_name), None)
+
     def refresh_mappings(self):
         self._clear(self.mappings_tree)
         for i, m in enumerate(self.project.mappings):
-            self.mappings_tree.insert("", "end", iid=str(i), values=(m.name, m.device, m.request, m.register_type, m.register, m.permissions, m.data_type, m.count, "Yes" if m.enabled else "No"))
+            request = self._request_for_mapping(m.device, m.request)
+            access = permissions_for_function(request.function) if request else m.permissions
+            self.mappings_tree.insert("", "end", iid=str(i), values=(m.name, m.device, m.request, m.register_type, m.register, access, m.data_type, m.count, "Yes" if m.enabled else "No"))
 
     def _request_dialog(self, initial=None):
         initial = dict(initial or {})
@@ -129,6 +135,9 @@ class ExtendedProjectEditor(DeploymentEditor):
         if old != r.name:
             for m in self.project.mappings:
                 if m.device == self.project.devices[di].name and m.request == old: m.request = r.name
+        for m in self.project.mappings:
+            if m.device == self.project.devices[di].name and m.request == r.name:
+                m.permissions = permissions_for_function(r.function)
         self.mark_dirty(); self.refresh_all()
 
     def _mapping_dialog(self, initial=None):
@@ -136,17 +145,24 @@ class ExtendedProjectEditor(DeploymentEditor):
         dlg = FormDialog(self, "TCP Mapping", [
             ("name", "Name", "text", None), ("device", "Source device", "choice", devices),
             ("request", "Request name", "text", None), ("register_type", "TCP register type", "choice", REGISTER_TYPES),
-            ("register", "TCP register", "text", None), ("permissions", "Access", "choice", PERMISSIONS),
+            ("register", "TCP register", "text", None),
             ("data_type", "Register data type", "choice", TCP_DATA_TYPES), ("count", "Value count", "text", None),
             ("enabled", "Enabled", "bool", None),
         ], initial)
         return dlg.values
 
+    def _mapping_access(self, device_name: str, request_name: str) -> str:
+        request = self._request_for_mapping(device_name, request_name)
+        if request is None:
+            raise ValueError(f"Unknown source request {device_name}/{request_name}")
+        return permissions_for_function(request.function)
+
     def add_mapping(self):
         if not self.project.devices: messagebox.showerror("No devices", "Create a device first."); return
-        v = self._mapping_dialog({"device": self.project.devices[0].name, "register_type": "input_register", "register": 1025, "permissions": "r", "data_type": "int16", "count": 1, "enabled": True})
+        v = self._mapping_dialog({"device": self.project.devices[0].name, "register_type": "input_register", "register": 1025, "data_type": "int16", "count": 1, "enabled": True})
         if not v: return
-        self.project.mappings.append(ServerMapping(name=v["name"], device=v["device"], request=v["request"], register=int(v["register"]), register_type=v["register_type"], enabled=bool(v["enabled"]), permissions=v["permissions"], data_type=v["data_type"], count=int(v["count"])))
+        access = self._mapping_access(v["device"], v["request"])
+        self.project.mappings.append(ServerMapping(name=v["name"], device=v["device"], request=v["request"], register=int(v["register"]), register_type=v["register_type"], enabled=bool(v["enabled"]), permissions=access, data_type=v["data_type"], count=int(v["count"])))
         self.mark_dirty(); self.refresh_mappings()
 
     def edit_mapping(self):
@@ -154,7 +170,9 @@ class ExtendedProjectEditor(DeploymentEditor):
         if not sel: return
         i = int(sel[0]); m = self.project.mappings[i]; v = self._mapping_dialog(vars_for(m))
         if not v: return
-        self.project.mappings[i] = ServerMapping(name=v["name"], device=v["device"], request=v["request"], register=int(v["register"]), register_type=v["register_type"], enabled=bool(v["enabled"]), permissions=v["permissions"], data_type=v["data_type"], count=int(v["count"]))
+        access = self._mapping_access(v["device"], v["request"])
+        source_id = m.source_id
+        self.project.mappings[i] = ServerMapping(name=v["name"], device=v["device"], request=v["request"], register=int(v["register"]), register_type=v["register_type"], enabled=bool(v["enabled"]), permissions=access, data_type=v["data_type"], count=int(v["count"]), source_id=source_id)
         self.mark_dirty(); self.refresh_mappings()
 
     def open_bulk_generator(self):
