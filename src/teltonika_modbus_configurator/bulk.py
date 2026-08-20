@@ -1,11 +1,19 @@
-"""Generic bulk device/request/mapping generation for the editor and CLI."""
+"""Generic bulk RTU/TCP-client request and mapping generation."""
 
 from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
 
-from .models import Device, FunctionCode, Project, Request, ServerMapping, permissions_for_function
+from .models import (
+    Device,
+    FunctionCode,
+    Project,
+    Request,
+    ServerMapping,
+    TcpClientDevice,
+    permissions_for_function,
+)
 
 
 @dataclass(slots=True)
@@ -36,13 +44,17 @@ class BulkMappingSpec:
 
 @dataclass(slots=True)
 class BulkSpec:
+    # transport is either "rtu" or "tcp". Existing callers remain RTU by default.
     connection: str
     name_pattern: str
     count: int
+    transport: str = "rtu"
     start_index: int = 1
     slave_start: int = 1
     slave_step: int = 1
     slave_ids: list[int] | None = None
+    host: str = ""
+    port: int = 502
     period: int = 10
     timeout: int = 1
     enabled: bool = True
@@ -52,8 +64,9 @@ class BulkSpec:
 
 @dataclass(slots=True)
 class BulkResult:
-    devices: list[Device]
-    mappings: list[ServerMapping]
+    devices: list[Device] = field(default_factory=list)
+    tcp_clients: list[TcpClientDevice] = field(default_factory=list)
+    mappings: list[ServerMapping] = field(default_factory=list)
 
 
 SUPPORTED_DATA_TYPES = {"int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "ascii", "hex", "bool", "pdu"}
@@ -69,7 +82,6 @@ WRITE_TYPES = {5: "coil", 6: "holding_register", 15: "coil", 16: "holding_regist
 
 
 def suggested_register_type(function: FunctionCode) -> str:
-    """Return the natural Modbus TCP Server area for a source request."""
     return (READ_TYPES if function.is_read else WRITE_TYPES)[int(function)]
 
 
@@ -92,21 +104,31 @@ def _overlap(start_a: int, width_a: int, start_b: int, width_b: int) -> bool:
     return start_a <= start_b + width_b - 1 and start_b <= start_a + width_a - 1
 
 
+def _ids_for_spec(spec: BulkSpec) -> list[int]:
+    if spec.slave_ids is not None:
+        return list(spec.slave_ids)
+    return [spec.slave_start + i * spec.slave_step for i in range(max(spec.count, 0))]
+
+
 def validate_bulk_spec(project: Project, spec: BulkSpec) -> list[str]:
     errors: list[str] = []
+    if spec.transport not in {"rtu", "tcp"}: errors.append("Transport must be 'rtu' or 'tcp'.")
     if spec.count < 1: errors.append("Count must be at least 1.")
     if not spec.name_pattern: errors.append("Device name pattern is required.")
-    if spec.connection not in {c.name for c in project.connections}: errors.append(f"Unknown connection: {spec.connection!r}.")
+    if spec.transport == "rtu" and spec.connection not in {c.name for c in project.connections}:
+        errors.append(f"Unknown connection: {spec.connection!r}.")
+    if spec.transport == "tcp":
+        if not spec.host.strip(): errors.append("TCP host/IP is required.")
+        if not 1 <= spec.port <= 65535: errors.append("TCP port must be in 1..65535.")
     if spec.period < 1: errors.append("Period must be at least 1.")
     if spec.timeout < 0: errors.append("Timeout cannot be negative.")
-    if spec.slave_ids is not None:
-        if len(spec.slave_ids) != spec.count: errors.append("Explicit Slave ID list length must equal count.")
-        slave_ids = list(spec.slave_ids)
-    else:
-        slave_ids = [spec.slave_start + i * spec.slave_step for i in range(max(spec.count, 0))]
-    for sid in slave_ids:
-        if not 1 <= sid <= 247: errors.append(f"Slave ID {sid} is outside the Modbus range 1..247.")
-    if len(set(slave_ids)) != len(slave_ids): errors.append("Generated Slave IDs contain duplicates.")
+
+    ids = _ids_for_spec(spec)
+    if spec.slave_ids is not None and len(ids) != spec.count:
+        errors.append("Explicit Slave/Unit ID list length must equal count.")
+    for sid in ids:
+        if not 1 <= sid <= 247: errors.append(f"Slave/Unit ID {sid} is outside the Modbus range 1..247.")
+    if len(set(ids)) != len(ids): errors.append("Generated Slave/Unit IDs contain duplicates.")
 
     request_names = [r.name for r in spec.requests]
     if len(set(request_names)) != len(request_names): errors.append("Request names must be unique within the template.")
@@ -139,15 +161,25 @@ def validate_bulk_spec(project: Project, spec: BulkSpec) -> list[str]:
             errors.append(f"Mapping {m.name_pattern!r}: FC{int(r.function):02d} should use TCP type {natural!r}.")
     if errors: return errors
 
-    existing_names = {d.name for d in project.devices}; existing_slave_pairs = {(d.connection, d.slave_id) for d in project.devices}
-    existing_mapping_names = {m.name for m in project.mappings}; generated_names: set[str] = set(); generated_mapping_names: set[str] = set(); generated_ranges = []
+    existing_names = {d.name for d in project.devices} | {d.name for d in project.tcp_clients}
+    existing_rtu_pairs = {(d.connection, d.slave_id) for d in project.devices}
+    existing_tcp_pairs = {(d.host, d.port, d.server_id) for d in project.tcp_clients}
+    existing_mapping_names = {m.name for m in project.mappings}
+    generated_names: set[str] = set(); generated_mapping_names: set[str] = set(); generated_ranges = []
     existing_ranges = [(m.register_type, m.register, _mapping_width(m), m.name) for m in project.mappings if m.enabled]
+
     for ordinal in range(spec.count):
-        index = spec.start_index + ordinal; device_name = _format(spec.name_pattern, device="", index=index, ordinal=ordinal); sid = slave_ids[ordinal]
+        index = spec.start_index + ordinal
+        device_name = _format(spec.name_pattern, device="", index=index, ordinal=ordinal)
+        sid = ids[ordinal]
         if device_name in existing_names: errors.append(f"Device name {device_name!r} already exists.")
         if device_name in generated_names: errors.append(f"Device name pattern generates duplicate name {device_name!r}.")
         generated_names.add(device_name)
-        if (spec.connection, sid) in existing_slave_pairs: errors.append(f"Slave ID {sid} is already used on connection {spec.connection!r}.")
+        if spec.transport == "rtu" and (spec.connection, sid) in existing_rtu_pairs:
+            errors.append(f"Slave ID {sid} is already used on connection {spec.connection!r}.")
+        if spec.transport == "tcp" and (spec.host, spec.port, sid) in existing_tcp_pairs:
+            errors.append(f"Unit ID {sid} is already used at {spec.host}:{spec.port}.")
+
         for m in spec.mappings:
             r = request_by_name[m.request]
             name = _format(m.name_pattern, device=device_name, index=index, ordinal=ordinal, request=m.request)
@@ -168,22 +200,36 @@ def validate_bulk_spec(project: Project, spec: BulkSpec) -> list[str]:
 def generate_bulk(project: Project, spec: BulkSpec) -> BulkResult:
     errors = validate_bulk_spec(project, spec)
     if errors: raise ValueError("Bulk generation validation failed:\n- " + "\n- ".join(errors))
-    slave_ids = list(spec.slave_ids) if spec.slave_ids is not None else [spec.slave_start + i * spec.slave_step for i in range(spec.count)]
-    devices: list[Device] = []; mappings: list[ServerMapping] = []
+    ids = _ids_for_spec(spec)
+    result = BulkResult()
     request_by_name = {r.name: r for r in spec.requests}
+
     for ordinal in range(spec.count):
-        index = spec.start_index + ordinal; device_name = _format(spec.name_pattern, device="", index=index, ordinal=ordinal)
-        device_requests = [Request(name=r.name, function=r.function, register=r.register, count=r.count, data_type=r.data_type, byte_order=r.byte_order, enabled=r.enabled, values=r.values, raw_data_type=r.raw_data_type) for r in spec.requests]
-        devices.append(Device(name=device_name, slave_id=slave_ids[ordinal], connection=spec.connection, period=spec.period, timeout=spec.timeout, enabled=spec.enabled, requests=device_requests))
+        index = spec.start_index + ordinal
+        device_name = _format(spec.name_pattern, device="", index=index, ordinal=ordinal)
+        device_requests = [Request(name=r.name, function=r.function, register=r.register, count=r.count, data_type=r.data_type,
+                                   byte_order=r.byte_order, enabled=r.enabled, values=r.values, raw_data_type=r.raw_data_type)
+                           for r in spec.requests]
+        if spec.transport == "tcp":
+            result.tcp_clients.append(TcpClientDevice(name=device_name, server_id=ids[ordinal], host=spec.host, port=spec.port,
+                                                       period=spec.period, timeout=spec.timeout, enabled=spec.enabled,
+                                                       requests=device_requests))
+        else:
+            result.devices.append(Device(name=device_name, slave_id=ids[ordinal], connection=spec.connection,
+                                         period=spec.period, timeout=spec.timeout, enabled=spec.enabled,
+                                         requests=device_requests))
         for m in spec.mappings:
             r = request_by_name[m.request]; count = m.count if m.count is not None else max(1, r.count)
-            mappings.append(ServerMapping(name=_format(m.name_pattern, device=device_name, index=index, ordinal=ordinal, request=m.request), device=device_name, request=m.request,
-                                          register=m.start_register + ordinal * m.step, register_type=m.register_type, enabled=m.enabled,
-                                          permissions=permissions_for_function(r.function), data_type=m.data_type, count=count))
-    return BulkResult(devices=devices, mappings=mappings)
+            result.mappings.append(ServerMapping(name=_format(m.name_pattern, device=device_name, index=index, ordinal=ordinal, request=m.request),
+                                                 device=device_name, request=m.request, register=m.start_register + ordinal * m.step,
+                                                 register_type=m.register_type, enabled=m.enabled,
+                                                 permissions=permissions_for_function(r.function), data_type=m.data_type, count=count))
+    return result
 
 
 def apply_bulk(project: Project, spec: BulkSpec) -> BulkResult:
     result = generate_bulk(project, spec)
-    project.devices.extend(deepcopy(result.devices)); project.mappings.extend(deepcopy(result.mappings))
+    project.devices.extend(deepcopy(result.devices))
+    project.tcp_clients.extend(deepcopy(result.tcp_clients))
+    project.mappings.extend(deepcopy(result.mappings))
     return result
