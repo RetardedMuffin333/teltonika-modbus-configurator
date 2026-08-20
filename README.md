@@ -8,45 +8,67 @@ The goal is to configure large Modbus installations without manually creating hu
 
 A device can be a thermostat, chiller, AHU, meter, pump, VFD, or any other Modbus RTU device.
 
-## v0.1.0 — proven baseline
+## v0.2.0
 
-Version `0.1.0` freezes the first end-to-end workflow that was successfully tested on a real Teltonika TRB145 running RutOS 7.24.2:
+v0.2 expands the proven v0.1 RTU workflow with write requests, writable TCP mappings, richer datatypes, and full editing of imported live configurations while retaining stable RutOS UCI identities.
 
 ```text
 Modbus RTU devices
-        ↓ RS485
-Teltonika TRB145 / RutOS Modbus Client
-        ↓ local value mappings
+        ↕ RS485
+Teltonika TRB / RutOS Modbus Client
+        ↕
 RutOS Modbus TCP Server
-        ↓
-atvise Connect (one Modbus TCP connection)
+        ↕
+atvise Connect / other Modbus TCP client
 ```
-
-The release acceptance test generated and deployed a fresh batch of 23 Modbus RTU devices, each with three requests, plus the corresponding Modbus TCP Server mappings. RutOS accepted the generated UCI, the entries appeared correctly in the WebUI, polling worked, and the resulting values were exposed through the single Modbus TCP Server connection.
 
 ### Current capabilities
 
-- Serial Modbus connections and RTU devices
-- Arbitrary FC01–FC04 read requests
-- RutOS Modbus TCP Server mappings
+- Serial Modbus RTU connections and devices
+- FC01 Read coils
+- FC02 Read discrete inputs
+- FC03 Read holding registers
+- FC04 Read input registers
+- FC05 Set single coil
+- FC06 Set single holding register
+- FC15 Set multiple coils
+- FC16 Set multiple holding registers
+- Separate read-count and write-value semantics
+- Request datatypes currently generated from scratch for:
+  - 8-bit INT / UINT
+  - 16-bit INT / UINT, high-byte-first or low-byte-first
+  - Bool, ASCII, Hex and PDU where supported by RutOS
+- Lossless preservation of imported RutOS datatype tokens not yet decoded by the configurator
+- All four Modbus TCP Server areas: Coil, Discrete Input, Holding Register, Input Register
+- TCP mapping permissions: Read-Only, Write-Only, Read-Write
+- TCP mapping datatypes including Binary, String, Bool, integer widths and FLOAT32/FLOAT64 metadata
 - Automatic internal UCI IDs and `tag_id` relationships
 - Import existing live RutOS Modbus configuration over SSH
-- Exact no-op round-trip for live imports: import → no edits → zero diff
-- Safe append-only generation for imported live projects
-- YAML save/load, including imported UCI provenance
+- Exact no-op round trip: import → no edits → byte-for-byte original UCI
+- Edit, rename, add and delete imported connections, devices, requests and TCP mappings
+- Edit imported TCP Server settings
+- Stable provenance IDs for imported RutOS sections, avoiding unrelated ID renumbering
+- YAML save/load including imported UCI provenance IDs
 - Reusable device/request templates
-- Bulk device generation with sequential or explicit Slave IDs
+- Bulk device generation with sequential or explicit/non-sequential Slave IDs
+- Bulk support for read and write requests
 - Automatic next-free TCP register allocation
 - Teltonika TCP register validation: `1025..65536`
+- Validation of function code vs Modbus register area and read/write permissions
 - Collision validation for devices, Slave IDs, symbol names and TCP register ranges
 - Exact RutOS UCI preview
 - Live unified diff against a TRB
 - Guarded SSH apply with local + remote backup
 - Remote rollback snapshots
 - Windows/Tkinter desktop GUI
-- atvise Connect `.Symbol` export for Input Registers and Holding Registers
+- atvise Connect `.Symbol` export for verified Input Register (`IR`) and Holding Register (`HR`) mappings
 
-Modbus TCP Client devices and additional unverified register/symbol types are intentionally deferred to a later version.
+### Known v0.2 limitations
+
+- Modbus TCP Client devices are not modeled yet.
+- Fresh generation of all 32/64-bit request byte-order variants is intentionally deferred until their exact RutOS UCI tokens are verified on hardware. Imported unknown tokens are preserved losslessly.
+- atvise `.Symbol` export is still intentionally limited to verified `IR` and `HR` forms. Coil/Discrete Input and float/double symbol forms will be added after verification.
+- No standalone Windows installer yet; installation uses Python/pip.
 
 ## Installation
 
@@ -82,6 +104,8 @@ The GUI supports:
 - Devices and requests editor
 - TCP Server mappings editor
 - TCP Server settings
+- Read and write request creation
+- Read-Only / Write-Only / Read-Write TCP mappings
 - Bulk Device Generator using any existing device as a template
 - Sequential or explicit/non-sequential Slave IDs
 - Automatic next-free TCP mapping proposals
@@ -92,16 +116,40 @@ The GUI supports:
 - Rollback to a saved remote snapshot
 - Export of atvise Connect `.Symbol` files
 
+## Read/write command-feedback pattern
+
+v0.2 supports the common pattern where one physical holding register is written through one request and independently polled through another:
+
+```text
+SCADA writes TCP HR1032
+        ↓
+CMD_WorkMode
+FC06 / physical HR101
+Enabled = OFF
+
+physical HR101
+        ↓
+Status_CMD_WorkMode
+FC03 / physical HR101
+Enabled = ON
+        ↓
+SCADA reads TCP HR1035
+```
+
+This keeps command and feedback as separate SCADA addresses while both point to the same physical device register.
+
 ## Recommended live workflow
 
-For an existing TRB, use this sequence:
+For an existing TRB:
 
 ```text
 Import live TRB
       ↓
+Save YAML
+      ↓
 Validate
       ↓
-Make additions in the GUI / Bulk Generator
+Add / edit / delete configuration
       ↓
 Preview live diff
       ↓
@@ -114,33 +162,33 @@ Fresh import
 Preview live diff again
 ```
 
-For a successful deployment, the final fresh import should report that the live configuration already matches the generated configuration.
+A successful final verification should report no difference between the fresh live import and generated configuration.
 
 ### Round-trip safety
 
-Imported projects preserve the original `modbus_client` and `modbus_server` UCI as provenance. With no edits, generation returns the original configuration exactly, preventing accidental UCI ID renumbering or broken `tag_id` references.
+Imported projects preserve the original `modbus_client` and `modbus_server` UCI plus stable source IDs for imported entities. With no edits, generation returns the original UCI byte-for-byte.
 
-For v0.1.0, imported projects are intentionally append-only: existing imported connections, devices, requests, mappings and TCP Server settings are protected from silent reconstruction. New entries receive IDs above the existing UCI range.
+When an imported entity is edited, v0.2 updates the section with its existing UCI ID rather than reconstructing unrelated sections. Newly added sections receive deterministic IDs above the existing range. Unknown RutOS options in edited sections are retained where possible.
 
 ## Bulk generation
 
-The Bulk Device Generator can clone any existing device as a template. A template may contain multiple requests and multiple TCP mappings.
+The Bulk Device Generator can clone any existing device as a template, including multiple requests and TCP mappings.
 
-The generator supports both simple sequential Slave IDs and real-world non-sequential address lists. It checks for:
+The generator supports sequential and explicit/non-sequential Slave IDs and validates:
 
 - duplicate device names;
 - duplicate Slave IDs on the same serial connection;
 - duplicate mapping/symbol names;
 - overlapping TCP register ranges;
-- TCP registers outside the Teltonika-supported `1025..65536` range.
-
-Loading an existing device template automatically proposes the next free register for each related mapping group.
+- TCP registers outside `1025..65536`;
+- invalid function/register-area combinations;
+- invalid read/write mapping permissions.
 
 ## atvise Connect symbol export
 
-The exporter uses the same TCP mappings generated for RutOS, so Connect does not need to be configured manually a second time.
+The exporter uses the same TCP mappings generated for RutOS so the register list does not need to be entered manually a second time.
 
-A project containing mappings such as:
+Example:
 
 ```text
 Joy01_Temp   input_register   1025
@@ -157,11 +205,7 @@ sym-Joy01_SetP=IR1050,
 sym-Joy01_OnOff=HR1080,
 ```
 
-The normal GUI export includes all mappings, including disabled mappings. A separate enabled-only export is available when a runtime-only symbol list is preferred.
-
-v0.1.0 supports the verified `IR` and `HR` forms only; unsupported register types fail explicitly instead of guessing Connect syntax.
-
-From the GUI use:
+From the GUI:
 
 ```text
 Export
@@ -183,67 +227,39 @@ Read a live configuration over SSH:
 tmc import-live --host <TRB-IP> -o imported.yaml
 ```
 
-Or convert previously exported UCI files:
+Or convert exported UCI files:
 
 ```bash
 tmc import-uci modbus_client.txt modbus_server.txt -o imported.yaml
 ```
 
-The importer resolves RutOS relationships such as:
+The importer resolves relationships such as:
 
 ```text
 rtu_server '2'
-request_2 '3'
-tag_id '2.3'
+request_2 '13'
+tag_id '2.13'
 ```
 
-back into explicit project relationships between devices, requests and TCP mappings.
+into explicit project relationships while retaining those source IDs for later edits.
 
 ## CLI
-
-Local operations:
 
 ```bash
 tmc validate project.yaml
 tmc preview project.yaml
 tmc export project.yaml -o output
 tmc export-symbols project.yaml -o Conn-TRB145.Symbol
-```
-
-Compare against a live TRB without writing:
-
-```bash
 tmc remote-preview project.yaml --host <TRB-IP>
-```
-
-Apply after reviewing the diff:
-
-```bash
 tmc apply project.yaml --host <TRB-IP>
-```
-
-Rollback:
-
-```bash
 tmc rollback <snapshot> --host <TRB-IP>
 ```
 
 Passwords are prompted interactively and are not stored in YAML. SSH keys are also supported.
 
-## RutOS UCI
-
-RutOS stores the Modbus configuration in packages such as:
-
-```text
-/etc/config/modbus_client
-/etc/config/modbus_server
-```
-
-The configurator generates the UCI relationships used by RutOS, including references between Modbus Client requests and Modbus TCP Server tags.
-
 ## Deployment safety
 
-The configurator does not blindly overwrite a live TRB. Deployment follows:
+The configurator does not blindly overwrite a live TRB:
 
 ```text
 read live config
@@ -261,44 +277,34 @@ apply UCI + commit + restart
 keep rollback snapshot
 ```
 
-Always review the live diff before applying a fresh project that is intended to replace an existing configuration.
+Always review the live diff before applying changes.
 
-## Tested v0.1.0 scenario
+## Hardware validation history
 
-The release was validated with a real 23-device RTU batch using a mixture of sequential and non-sequential Slave IDs. Each device contained three read requests:
+### v0.1.0 baseline
 
-```text
-Temperature  → FC04 / register 515
-Setpoint     → FC04 / register 554
-On/Off       → FC03 / register 262
-```
+v0.1.0 was validated on a real Teltonika TRB145 running RutOS 7.24.2 with a fresh generated batch of 23 RTU devices, three requests per device, and corresponding TCP mappings. RutOS accepted the generated UCI and the configuration worked live.
 
-The TCP Server exposed three separate blocks:
+### v0.2.0
 
-```text
-Temperature  → IR1025...
-Setpoint     → IR1050...
-On/Off       → HR1080...
-```
-
-The exact addresses and Device ID are project-specific; the important result is that a completely fresh project generated by the configurator was successfully pushed to the TRB145 and worked live.
+v0.2 retains the v0.1 baseline and adds generated read/write request support and stable editing of imported live UCI. Release-candidate validation includes clean generated diffs for FC06 Write-Only command mappings and FC03 Read-Only feedback mappings targeting the same physical holding register. Final hardware acceptance should be completed before the release branch is frozen.
 
 ## Security and public-repository notes
 
-- Do not commit exported live UCI files, device backups, project YAML files containing site-specific configuration, SSH private keys, passwords, or other credentials.
+- Do not commit exported live UCI files, device backups, site-specific project YAML files, SSH private keys, passwords, or other credentials.
 - Review the live diff before every deployment.
 - Prefer test devices or disabled entries for first-time deployment checks.
 - This project modifies live device configuration over SSH; use it only on equipment you are authorized to administer.
 
-## Next version
-
-Planned later work includes:
+## Planned next work
 
 - Modbus TCP Client devices alongside RTU devices
-- more RutOS Modbus options and request types
-- verified Coil / Discrete Input atvise symbol export
-- reusable device-template libraries
-- installer / packaging improvements
-- broader edit/update support for already-imported live entities
+- complete verified 32/64-bit request datatype and byte-order generation
+- verified atvise `DI`, `DA`, `IRR`, `HRR`, `HRD` and related symbol forms
+- reusable device-template libraries/catalogs
+- richer bulk editing
+- object-level live diff summaries
+- dependency-aware delete helpers
+- installer/packaging improvements
 
-See `CHANGELOG.md` for the frozen v0.1.0 feature set.
+See `CHANGELOG.md` for release history.
