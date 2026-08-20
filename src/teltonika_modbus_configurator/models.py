@@ -61,6 +61,8 @@ class Request:
 
 @dataclass(slots=True)
 class Device:
+    """Modbus RTU server/slave reached through a local serial connection."""
+
     name: str
     slave_id: int
     connection: str
@@ -69,6 +71,27 @@ class Device:
     enabled: bool = True
     requests: list[Request] = field(default_factory=list)
     source_id: str | None = None
+
+
+@dataclass(slots=True)
+class TcpClientDevice:
+    """Remote Modbus TCP server queried by RutOS Modbus TCP Client.
+
+    `raw_options` intentionally retains every imported UCI option. v0.3 starts by
+    making mixed RTU + TCP live imports lossless; fresh TCP-client generation is
+    enabled only after the exact RutOS option names have been verified on hardware.
+    """
+
+    name: str
+    server_id: int
+    host: str = ""
+    port: int = 502
+    period: int = 60
+    timeout: int = 5
+    enabled: bool = True
+    requests: list[Request] = field(default_factory=list)
+    source_id: str | None = None
+    raw_options: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -107,6 +130,7 @@ class ImportedUciState:
 class Project:
     connections: list[SerialConnection] = field(default_factory=list)
     devices: list[Device] = field(default_factory=list)
+    tcp_clients: list[TcpClientDevice] = field(default_factory=list)
     mappings: list[ServerMapping] = field(default_factory=list)
     tcp_server: TcpServerSettings = field(default_factory=TcpServerSettings)
     source_uci: ImportedUciState | None = None
