@@ -52,6 +52,37 @@ def _request_options(request: Request) -> dict[str, str]:
     }
 
 
+def _tcp_client_options(device) -> dict[str, str]:
+    """RutOS tcp_server options verified from a live TRB145 configuration."""
+    return {
+        "timeout": str(device.timeout),
+        "server_id": str(device.server_id),
+        "frequency": "period",
+        "port": str(device.port),
+        "dev_ipaddr": device.host,
+        "name": device.name,
+        "delay": "0",
+        "skip_on_many_tmos": "0",
+        "enabled": _on(device.enabled),
+        "period": str(device.period),
+        "reconnect": "0",
+    }
+
+
+def _tcp_client_patch_options(device) -> dict[str, str]:
+    """Patch modeled fields while preserving imported RutOS-only options."""
+    return {
+        "timeout": str(device.timeout),
+        "server_id": str(device.server_id),
+        "frequency": "period",
+        "port": str(device.port),
+        "dev_ipaddr": device.host,
+        "name": device.name,
+        "enabled": _on(device.enabled),
+        "period": str(device.period),
+    }
+
+
 def _mapping_options(mapping, source_device_id: int | str, source_request_id: int | str) -> dict[str, str]:
     return {
         "modbus_dev_config": "modbus",
@@ -154,15 +185,6 @@ def _generate_from_imported(project: Project) -> GeneratedUci:
     ):
         return GeneratedUci(source.modbus_client, source.modbus_server)
 
-    # v0.3 foundation makes existing TCP Client sections first-class and lossless,
-    # but does not yet rewrite/create them until their exact RutOS UCI options are
-    # captured from real hardware. RTU and TCP Server mappings may still be edited.
-    if project.tcp_clients != baseline.tcp_clients:
-        raise ValueError(
-            "Modbus TCP Client devices are imported losslessly in the v0.3 foundation, "
-            "but editing/creating TCP Client device sections is not enabled until a live RutOS UCI sample is verified."
-        )
-
     client_sections = parse_uci(source.modbus_client)
     server_sections = parse_uci(source.modbus_server)
     next_id = _numeric_max(client_sections) + 1
@@ -228,18 +250,24 @@ def _generate_from_imported(project: Project) -> GeneratedUci:
                 client_repl[(f"request_{did}", rid)] = _request_options(r)
             request_ids[(d.name, r.name)] = rid
 
-    # Existing TCP Client sections are not rewritten yet, but their stable source
-    # IDs participate in tag_id resolution so mixed RTU + TCP projects can safely
-    # edit the surrounding Modbus TCP Server configuration.
     for d in project.tcp_clients:
         if d.source_id is None:
-            raise ValueError("Fresh Modbus TCP Client generation is not enabled in the v0.3 foundation yet")
-        did = d.source_id
+            did = str(next_id)
+            next_id += 1
+            client_add.append(_section("tcp_server", did, _tcp_client_options(d)))
+        else:
+            did = d.source_id
+            client_repl[("tcp_server", did)] = _tcp_client_patch_options(d)
         device_ids[d.name] = did
         for r in d.requests:
             if r.source_id is None:
-                raise ValueError("Adding requests to Modbus TCP Client devices is not enabled until live UCI is verified")
-            request_ids[(d.name, r.name)] = r.source_id
+                rid = str(next_id)
+                next_id += 1
+                client_add.append(_request_section(did, rid, r))
+            else:
+                rid = r.source_id
+                client_repl[(f"request_{did}", rid)] = _request_options(r)
+            request_ids[(d.name, r.name)] = rid
 
     current_device_ids = {d.source_id for d in project.devices if d.source_id is not None}
     current_request_ids = {r.source_id for d in project.devices for r in d.requests if r.source_id is not None}
@@ -251,6 +279,18 @@ def _generate_from_imported(project: Project) -> GeneratedUci:
         else:
             for r in d.requests:
                 if r.source_id not in current_request_ids:
+                    client_del.add((f"request_{d.source_id}", str(r.source_id)))
+
+    current_tcp_ids = {d.source_id for d in project.tcp_clients if d.source_id is not None}
+    current_tcp_request_ids = {r.source_id for d in project.tcp_clients for r in d.requests if r.source_id is not None}
+    for d in baseline.tcp_clients:
+        if d.source_id not in current_tcp_ids:
+            client_del.add(("tcp_server", str(d.source_id)))
+            for r in d.requests:
+                client_del.add((f"request_{d.source_id}", str(r.source_id)))
+        else:
+            for r in d.requests:
+                if r.source_id not in current_tcp_request_ids:
                     client_del.add((f"request_{d.source_id}", str(r.source_id)))
 
     server_repl[("modbus", "modbus")] = {
@@ -284,12 +324,6 @@ def _generate_from_imported(project: Project) -> GeneratedUci:
 
 
 def _generate_fresh(project: Project) -> GeneratedUci:
-    if project.tcp_clients:
-        raise ValueError(
-            "Fresh Modbus TCP Client generation is not enabled in the v0.3 foundation yet; "
-            "import one live TCP Client example first so its exact RutOS UCI schema can be verified."
-        )
-
     client = ["package modbus_client", "", "config main 'main'", "\toption debug '0'", "\toption enabled '1'", ""]
     next_id = 1
     connection_ids = {}
@@ -315,6 +349,17 @@ def _generate_fresh(project: Project) -> GeneratedUci:
             "skip_on_many_tmos": "0", "timeout": str(d.timeout), "period": str(d.period),
             "frequency": "period", "name": d.name, "enabled": _on(d.enabled),
         }).splitlines() + [""])
+        for r in d.requests:
+            rid = next_id
+            next_id += 1
+            request_ids[(d.name, r.name)] = rid
+            client.extend(_request_section(did, rid, r).splitlines() + [""])
+
+    for d in project.tcp_clients:
+        did = next_id
+        next_id += 1
+        device_ids[d.name] = did
+        client.extend(_section("tcp_server", did, _tcp_client_options(d)).splitlines() + [""])
         for r in d.requests:
             rid = next_id
             next_id += 1
