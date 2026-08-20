@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 
-from .models import Device, FunctionCode, Project, Request, ServerMapping
+from .models import Device, FunctionCode, Project, Request, ServerMapping, permissions_for_function
 
 
 @dataclass(slots=True)
@@ -29,6 +29,7 @@ class BulkMappingSpec:
     start_register: int
     step: int = 1
     enabled: bool = True
+    # Kept for project/YAML compatibility; effective access is derived from request.function.
     permissions: str = "r"
     data_type: str = "int16"
     count: int | None = None
@@ -101,7 +102,6 @@ def validate_bulk_spec(project: Project, spec: BulkSpec) -> list[str]:
         if m.start_register < 1025: errors.append(f"Mapping {m.name_pattern!r}: start register must be at least 1025.")
         if m.step < 1: errors.append(f"Mapping {m.name_pattern!r}: step must be at least 1.")
         if m.register_type not in {"coil", "discrete_input", "holding_register", "input_register"}: errors.append(f"Mapping {m.name_pattern!r}: invalid TCP register type {m.register_type!r}.")
-        if m.permissions not in {"r", "w", "rw"}: errors.append(f"Mapping {m.name_pattern!r}: invalid permissions {m.permissions!r}.")
         if m.count is not None and m.count < 1: errors.append(f"Mapping {m.name_pattern!r}: count must be at least 1.")
     if errors: return errors
 
@@ -145,7 +145,7 @@ def generate_bulk(project: Project, spec: BulkSpec) -> BulkResult:
             r = request_by_name[m.request]; count = m.count if m.count is not None else max(1, r.count)
             mappings.append(ServerMapping(name=_format(m.name_pattern, device=device_name, index=index, ordinal=ordinal, request=m.request), device=device_name, request=m.request,
                                           register=m.start_register + ordinal * m.step, register_type=m.register_type, enabled=m.enabled,
-                                          permissions=m.permissions, data_type=m.data_type, count=count))
+                                          permissions=permissions_for_function(r.function), data_type=m.data_type, count=count))
     return BulkResult(devices=devices, mappings=mappings)
 
 
