@@ -15,8 +15,8 @@ FUNCTION_CHOICES = (
     "1 - Read coils", "2 - Read discrete inputs", "3 - Read holding registers", "4 - Read input registers",
     "5 - Set single coil", "6 - Set single holding register", "15 - Set multiple coils", "16 - Set multiple holding registers",
 )
-REQUEST_DATA_TYPES = ("int8", "uint8", "int16", "uint16", "ascii", "hex", "bool", "pdu")
-BYTE_ORDERS = ("none", "high_byte_first", "low_byte_first")
+REQUEST_DATA_TYPES = ("int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "ascii", "hex", "bool", "pdu")
+BYTE_ORDERS = ("none", "high_byte_first", "low_byte_first", "1234", "2143", "3412", "4321")
 TCP_DATA_TYPES = ("binary", "string", "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "float64")
 REGISTER_TYPES = ("coil", "discrete_input", "holding_register", "input_register")
 
@@ -98,7 +98,6 @@ class ExtendedProjectEditor(DeploymentEditor):
         ttk.Button(buttons, text="Add TCP client", command=self.add_tcp_client).pack(side="left", padx=3)
         ttk.Button(buttons, text="Edit TCP client", command=self.edit_tcp_client).pack(side="left", padx=3)
         ttk.Button(buttons, text="Delete TCP client", command=self.delete_tcp_client).pack(side="left", padx=3)
-        ttk.Label(buttons, text="Generation/deployment is gated until the RutOS TCP-client UCI schema is verified.").pack(side="left", padx=(16, 0))
 
         ttk.Label(lower, text="Requests for selected TCP client").pack(anchor="w")
         self.tcp_client_requests_tree = self._tree(lower, [
