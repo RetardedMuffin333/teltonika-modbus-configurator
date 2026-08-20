@@ -11,6 +11,12 @@ REQUEST_DATA_TYPES = {
     ("int8", "none"): "8bit_int", ("uint8", "none"): "8bit_uint",
     ("int16", "high_byte_first"): "16bit_int_hi_first", ("int16", "low_byte_first"): "16bit_int_lo_first",
     ("uint16", "high_byte_first"): "16bit_uint_hi_first", ("uint16", "low_byte_first"): "16bit_uint_lo_first",
+    ("float32", "1234"): "32bit_float1234", ("float32", "2143"): "32bit_float2143",
+    ("float32", "3412"): "32bit_float3412", ("float32", "4321"): "32bit_float4321",
+    ("int32", "1234"): "32bit_int1234", ("int32", "2143"): "32bit_int2143",
+    ("int32", "3412"): "32bit_int3412", ("int32", "4321"): "32bit_int4321",
+    ("uint32", "1234"): "32bit_uint1234", ("uint32", "2143"): "32bit_uint2143",
+    ("uint32", "3412"): "32bit_uint3412", ("uint32", "4321"): "32bit_uint4321",
     ("ascii", "none"): "ascii", ("hex", "none"): "hex", ("bool", "none"): "bool", ("pdu", "none"): "pdu",
 }
 
