@@ -29,7 +29,6 @@ class BulkMappingSpec:
     start_register: int
     step: int = 1
     enabled: bool = True
-    # Kept for project/YAML compatibility; effective access is derived from request.function.
     permissions: str = "r"
     data_type: str = "int16"
     count: int | None = None
@@ -57,12 +56,31 @@ class BulkResult:
     mappings: list[ServerMapping]
 
 
+SUPPORTED_DATA_TYPES = {"int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "ascii", "hex", "bool", "pdu"}
+BYTE_ORDERS_BY_TYPE = {
+    "int8": {"none"}, "uint8": {"none"},
+    "int16": {"high_byte_first", "low_byte_first"}, "uint16": {"high_byte_first", "low_byte_first"},
+    "int32": {"1234", "2143", "3412", "4321"}, "uint32": {"1234", "2143", "3412", "4321"},
+    "float32": {"1234", "2143", "3412", "4321"},
+    "ascii": {"none"}, "hex": {"none"}, "bool": {"none"}, "pdu": {"none"},
+}
+READ_TYPES = {1: "coil", 2: "discrete_input", 3: "holding_register", 4: "input_register"}
+WRITE_TYPES = {5: "coil", 6: "holding_register", 15: "coil", 16: "holding_register"}
+
+
+def suggested_register_type(function: FunctionCode) -> str:
+    """Return the natural Modbus TCP Server area for a source request."""
+    return (READ_TYPES if function.is_read else WRITE_TYPES)[int(function)]
+
+
 def _format(pattern: str, *, device: str, index: int, ordinal: int, request: str = "") -> str:
-    try: return pattern.format(device=device, index=index, ordinal=ordinal, request=request)
-    except (KeyError, IndexError, ValueError) as exc: raise ValueError(f"Invalid name pattern {pattern!r}: {exc}") from exc
+    try:
+        return pattern.format(device=device, index=index, ordinal=ordinal, request=request)
+    except (KeyError, IndexError, ValueError) as exc:
+        raise ValueError(f"Invalid name pattern {pattern!r}: {exc}") from exc
 
 
-def _mapping_width(project: Project, mapping: ServerMapping) -> int:
+def _mapping_width(mapping: ServerMapping) -> int:
     return max(1, mapping.count)
 
 
@@ -84,7 +102,8 @@ def validate_bulk_spec(project: Project, spec: BulkSpec) -> list[str]:
     if spec.slave_ids is not None:
         if len(spec.slave_ids) != spec.count: errors.append("Explicit Slave ID list length must equal count.")
         slave_ids = list(spec.slave_ids)
-    else: slave_ids = [spec.slave_start + i * spec.slave_step for i in range(max(spec.count, 0))]
+    else:
+        slave_ids = [spec.slave_start + i * spec.slave_step for i in range(max(spec.count, 0))]
     for sid in slave_ids:
         if not 1 <= sid <= 247: errors.append(f"Slave ID {sid} is outside the Modbus range 1..247.")
     if len(set(slave_ids)) != len(slave_ids): errors.append("Generated Slave IDs contain duplicates.")
@@ -92,22 +111,37 @@ def validate_bulk_spec(project: Project, spec: BulkSpec) -> list[str]:
     request_names = [r.name for r in spec.requests]
     if len(set(request_names)) != len(request_names): errors.append("Request names must be unique within the template.")
     for r in spec.requests:
+        if not r.name: errors.append("Request name is required.")
         if r.function.is_read and r.count < 1: errors.append(f"Request {r.name!r}: count must be at least 1.")
         if r.function.is_write and (r.values is None or not str(r.values).strip()): errors.append(f"Request {r.name!r}: write value(s) are required.")
-        if r.register < 0: errors.append(f"Request {r.name!r}: register cannot be negative.")
+        if r.register < 0 or r.register > 65535: errors.append(f"Request {r.name!r}: register must be in 0..65535.")
+        if r.raw_data_type is None:
+            if r.data_type not in SUPPORTED_DATA_TYPES:
+                errors.append(f"Request {r.name!r}: unsupported data type {r.data_type!r}.")
+            elif r.byte_order not in BYTE_ORDERS_BY_TYPE[r.data_type]:
+                allowed = ", ".join(sorted(BYTE_ORDERS_BY_TYPE[r.data_type]))
+                errors.append(f"Request {r.name!r}: byte order {r.byte_order!r} is invalid for {r.data_type}; use {allowed}.")
 
     request_by_name = {r.name: r for r in spec.requests}
     for m in spec.mappings:
-        if m.request not in request_by_name: errors.append(f"Mapping pattern {m.name_pattern!r} references unknown request {m.request!r}.")
-        if m.start_register < 1025: errors.append(f"Mapping {m.name_pattern!r}: start register must be at least 1025.")
+        r = request_by_name.get(m.request)
+        if r is None:
+            errors.append(f"Mapping pattern {m.name_pattern!r} references unknown request {m.request!r}.")
+            continue
+        if m.start_register < 1025 or m.start_register > 65536: errors.append(f"Mapping {m.name_pattern!r}: start register must be in 1025..65536.")
         if m.step < 1: errors.append(f"Mapping {m.name_pattern!r}: step must be at least 1.")
         if m.register_type not in {"coil", "discrete_input", "holding_register", "input_register"}: errors.append(f"Mapping {m.name_pattern!r}: invalid TCP register type {m.register_type!r}.")
         if m.count is not None and m.count < 1: errors.append(f"Mapping {m.name_pattern!r}: count must be at least 1.")
+        natural = suggested_register_type(r.function)
+        if r.function.is_write and m.register_type != natural:
+            errors.append(f"Mapping {m.name_pattern!r}: FC{int(r.function):02d} must use TCP type {natural!r}.")
+        if r.function in {FunctionCode.READ_COILS, FunctionCode.READ_DISCRETE_INPUTS} and m.register_type != natural:
+            errors.append(f"Mapping {m.name_pattern!r}: FC{int(r.function):02d} should use TCP type {natural!r}.")
     if errors: return errors
 
     existing_names = {d.name for d in project.devices}; existing_slave_pairs = {(d.connection, d.slave_id) for d in project.devices}
     existing_mapping_names = {m.name for m in project.mappings}; generated_names: set[str] = set(); generated_mapping_names: set[str] = set(); generated_ranges = []
-    existing_ranges = [(m.register_type, m.register, _mapping_width(project, m), m.name) for m in project.mappings if m.enabled]
+    existing_ranges = [(m.register_type, m.register, _mapping_width(m), m.name) for m in project.mappings if m.enabled]
     for ordinal in range(spec.count):
         index = spec.start_index + ordinal; device_name = _format(spec.name_pattern, device="", index=index, ordinal=ordinal); sid = slave_ids[ordinal]
         if device_name in existing_names: errors.append(f"Device name {device_name!r} already exists.")
@@ -150,4 +184,6 @@ def generate_bulk(project: Project, spec: BulkSpec) -> BulkResult:
 
 
 def apply_bulk(project: Project, spec: BulkSpec) -> BulkResult:
-    result = generate_bulk(project, spec); project.devices.extend(deepcopy(result.devices)); project.mappings.extend(deepcopy(result.mappings)); return result
+    result = generate_bulk(project, spec)
+    project.devices.extend(deepcopy(result.devices)); project.mappings.extend(deepcopy(result.mappings))
+    return result
