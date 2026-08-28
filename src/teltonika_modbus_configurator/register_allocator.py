@@ -59,14 +59,8 @@ def first_free_register_range(
     return candidate
 
 
-def _source_block_width(project: Project, register_type: str, source_start: int) -> int:
-    """Infer the source-device block width used by template cloning.
-
-    ``allocate_template_mapping_layout`` passes the minimum register of the
-    source device as ``default``. If a mapping starts there, use all mappings of
-    that same device/address-space to determine how much contiguous room the
-    cloned device will need.
-    """
+def _source_block_width(project: Project, register_type: str, source_start: int) -> int | None:
+    """Infer a cloned source-device block beginning exactly at ``source_start``."""
     anchors = [
         m for m in project.mappings
         if m.enabled and m.register_type == register_type and m.register == source_start
@@ -79,7 +73,7 @@ def _source_block_width(project: Project, register_type: str, source_start: int)
         ]
         if group:
             widths.append(max((m.register - source_start) + mapping_width(m) for m in group))
-    return max(widths, default=1)
+    return max(widths) if widths else None
 
 
 def next_free_register(
@@ -91,24 +85,25 @@ def next_free_register(
 ) -> int:
     """Return a suitable next register for a new mapping.
 
-    Template cloning calls this without ``request_name``. In that mode the
-    allocator uses first-fit placement and reserves the complete source-device
-    block, allowing gaps below intentionally separated mappings to be reused.
+    When called for template cloning, ``default`` is the source block's first
+    register. If an enabled mapping really starts there, first-fit allocation is
+    used for the complete source-device block so intentional later gaps can be
+    reused. Otherwise the historic ``max occupied + width`` behaviour remains.
 
-    When ``request_name`` is supplied the historic request-group behaviour is
-    preserved, which keeps manually added Temperature/Setpoint/etc. blocks
-    familiar and backwards compatible.
+    When ``request_name`` is supplied, same-request mappings are preferred to
+    preserve familiar grouped manual layouts.
     """
     if request_name is None:
-        width = _source_block_width(project, register_type, default)
-        return first_free_register_range(
-            project, register_type=register_type, width=width, default=default
-        )
+        source_width = _source_block_width(project, register_type, default)
+        if source_width is not None:
+            return first_free_register_range(
+                project, register_type=register_type, width=source_width, default=default
+            )
 
     same_request = [
         m
         for m in project.mappings
-        if m.register_type == register_type and m.request == request_name
+        if m.register_type == register_type and request_name and m.request == request_name
     ]
     candidates = same_request or [
         m for m in project.mappings if m.register_type == register_type
