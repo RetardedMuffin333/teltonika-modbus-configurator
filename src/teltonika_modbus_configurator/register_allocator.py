@@ -24,6 +24,41 @@ def mapping_width(mapping: ServerMapping) -> int:
     return max(1, mapping.count) * register_value_width(mapping.data_type, mapping.register_type)
 
 
+def first_free_register_range(
+    project: Project,
+    *,
+    register_type: str,
+    width: int = 1,
+    default: int = 1025,
+) -> int:
+    """Return the first contiguous free range in one Modbus address space.
+
+    Search begins at ``default`` and fills holes before later mappings. Disabled
+    mappings are ignored because they do not occupy the live TCP Server address
+    space. Width-aware mappings such as float32/int32/uint32 are respected.
+    """
+    width = max(1, width)
+    candidate = max(1025, default)
+    ranges = sorted(
+        (m.register, m.register + mapping_width(m) - 1)
+        for m in project.mappings
+        if m.enabled and m.register_type == register_type
+    )
+
+    for start, end in ranges:
+        if end < candidate:
+            continue
+        if candidate + width - 1 < start:
+            return candidate
+        candidate = max(candidate, end + 1)
+
+    if candidate + width - 1 > 65536:
+        raise ValueError(
+            f"No free {register_type} range of width {width} remains in 1025..65536."
+        )
+    return candidate
+
+
 def next_free_register(
     project: Project,
     *,
@@ -37,6 +72,9 @@ def next_free_register(
     register type are preferred. If none exist, all mappings of the requested
     TCP type are used. Mapping datatype width is respected, so float32/int32/
     uint32 mappings reserve two 16-bit Modbus registers per value.
+
+    This helper intentionally preserves the historic grouped-layout behaviour.
+    For compact hole-filling allocation use :func:`first_free_register_range`.
     """
 
     same_request = [
