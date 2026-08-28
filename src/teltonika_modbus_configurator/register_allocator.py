@@ -59,6 +59,29 @@ def first_free_register_range(
     return candidate
 
 
+def _source_block_width(project: Project, register_type: str, source_start: int) -> int:
+    """Infer the source-device block width used by template cloning.
+
+    ``allocate_template_mapping_layout`` passes the minimum register of the
+    source device as ``default``. If a mapping starts there, use all mappings of
+    that same device/address-space to determine how much contiguous room the
+    cloned device will need.
+    """
+    anchors = [
+        m for m in project.mappings
+        if m.enabled and m.register_type == register_type and m.register == source_start
+    ]
+    widths = []
+    for anchor in anchors:
+        group = [
+            m for m in project.mappings
+            if m.enabled and m.register_type == register_type and m.device == anchor.device
+        ]
+        if group:
+            widths.append(max((m.register - source_start) + mapping_width(m) for m in group))
+    return max(widths, default=1)
+
+
 def next_free_register(
     project: Project,
     *,
@@ -66,21 +89,26 @@ def next_free_register(
     request_name: str | None = None,
     default: int = 1000,
 ) -> int:
-    """Return the next register after matching occupied ranges.
+    """Return a suitable next register for a new mapping.
 
-    When ``request_name`` is supplied, mappings with the same request name and
-    register type are preferred. If none exist, all mappings of the requested
-    TCP type are used. Mapping datatype width is respected, so float32/int32/
-    uint32 mappings reserve two 16-bit Modbus registers per value.
+    Template cloning calls this without ``request_name``. In that mode the
+    allocator uses first-fit placement and reserves the complete source-device
+    block, allowing gaps below intentionally separated mappings to be reused.
 
-    This helper intentionally preserves the historic grouped-layout behaviour.
-    For compact hole-filling allocation use :func:`first_free_register_range`.
+    When ``request_name`` is supplied the historic request-group behaviour is
+    preserved, which keeps manually added Temperature/Setpoint/etc. blocks
+    familiar and backwards compatible.
     """
+    if request_name is None:
+        width = _source_block_width(project, register_type, default)
+        return first_free_register_range(
+            project, register_type=register_type, width=width, default=default
+        )
 
     same_request = [
         m
         for m in project.mappings
-        if m.register_type == register_type and request_name and m.request == request_name
+        if m.register_type == register_type and m.request == request_name
     ]
     candidates = same_request or [
         m for m in project.mappings if m.register_type == register_type
