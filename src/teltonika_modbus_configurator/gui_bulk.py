@@ -11,6 +11,7 @@ from .bulk import (
     BulkMappingSpec,
     BulkRequestSpec,
     BulkSpec,
+    allocate_template_mapping_layout,
     apply_bulk,
     generate_bulk,
     suggested_register_type,
@@ -79,6 +80,8 @@ class BulkGeneratorWindow(tk.Toplevel):
         self.requests: list[BulkRequestSpec] = []
         self.mappings: list[BulkMappingSpec] = []
         self.template_lookup: dict[str, tuple[str, object]] = {}
+        self.config_widgets: dict[str, tk.Widget] = {}
+        self.config_labels: dict[str, ttk.Label] = {}
         for d in project.devices: self.template_lookup[f"[RTU] {d.name}"] = ("rtu", d)
         for d in project.tcp_clients: self.template_lookup[f"[TCP] {d.name}"] = ("tcp", d)
         self.vars = {
@@ -91,7 +94,7 @@ class BulkGeneratorWindow(tk.Toplevel):
             "period": tk.StringVar(value="10"), "timeout": tk.StringVar(value="1"),
             "enabled": tk.BooleanVar(value=True),
         }
-        self._build_ui(); self._refresh_tables()
+        self._build_ui(); self._sync_transport_fields(); self._refresh_tables()
 
     def _build_ui(self):
         outer = ttk.Frame(self, padding=10); outer.pack(fill="both", expand=True)
@@ -107,15 +110,18 @@ class BulkGeneratorWindow(tk.Toplevel):
             ("connection", "RTU connection", [c.name for c in self.project.connections] or [""]), ("host", "TCP Host / IP", None),
             ("port", "TCP port", None), ("name_pattern", "Device name pattern", None),
             ("count", "Count", None), ("start_index", "Start index", None),
-            ("slave_start", "Slave / Unit ID start", None), ("slave_step", "Slave / Unit ID step", None),
-            ("slave_ids", "Explicit Slave / Unit IDs (CSV)", None), ("period", "Polling period", None),
+            ("slave_start", "Slave ID start", None), ("slave_step", "Slave ID step", None),
+            ("slave_ids", "Explicit Slave IDs (CSV)", None), ("period", "Polling period", None),
             ("timeout", "Timeout", None),
         ]
         for row, (key, label, choices) in enumerate(fields):
             r, pair = divmod(row, 2); c = pair * 2
-            ttk.Label(config, text=label).grid(row=r, column=c, sticky="w", padx=5, pady=3)
+            label_widget = ttk.Label(config, text=label)
+            label_widget.grid(row=r, column=c, sticky="w", padx=5, pady=3)
             widget = ttk.Entry(config, textvariable=self.vars[key], width=28) if choices is None else ttk.Combobox(config, textvariable=self.vars[key], values=choices, state="readonly", width=25)
             widget.grid(row=r, column=c + 1, sticky="ew", padx=5, pady=3)
+            self.config_labels[key] = label_widget; self.config_widgets[key] = widget
+        self.config_widgets["transport"].bind("<<ComboboxSelected>>", self._sync_transport_fields)
         ttk.Checkbutton(config, text="Devices enabled", variable=self.vars["enabled"]).grid(row=7, column=0, sticky="w", padx=5, pady=3)
         ttk.Button(config, text="Load template", command=self.load_template).grid(row=7, column=1, sticky="w", padx=5, pady=3)
         ttk.Label(config, text="Patterns may use {device}, {index}, {ordinal}, {request}").grid(row=7, column=2, columnspan=2, sticky="w", padx=5, pady=3)
@@ -143,6 +149,19 @@ class BulkGeneratorWindow(tk.Toplevel):
         ttk.Button(mb, text="Edit mapping", command=self.edit_mapping).pack(side="left", padx=3)
         ttk.Button(mb, text="Delete mapping", command=self.delete_mapping).pack(side="left", padx=3)
 
+    def _sync_transport_fields(self, _event=None):
+        tcp = self.vars["transport"].get() == "tcp"
+        connection = self.config_widgets.get("connection")
+        host = self.config_widgets.get("host")
+        port = self.config_widgets.get("port")
+        if connection is not None: connection.configure(state="disabled" if tcp else "readonly")
+        if host is not None: host.configure(state="normal" if tcp else "disabled")
+        if port is not None: port.configure(state="normal" if tcp else "disabled")
+        prefix = "Unit ID" if tcp else "Slave ID"
+        if "slave_start" in self.config_labels: self.config_labels["slave_start"].configure(text=f"{prefix} start")
+        if "slave_step" in self.config_labels: self.config_labels["slave_step"].configure(text=f"{prefix} step")
+        if "slave_ids" in self.config_labels: self.config_labels["slave_ids"].configure(text=f"Explicit {prefix}s (CSV)")
+
     def load_template(self):
         selected = self.vars["template"].get()
         if not selected or selected == "<blank>":
@@ -162,12 +181,13 @@ class BulkGeneratorWindow(tk.Toplevel):
                                          byte_order=r.byte_order, enabled=r.enabled, values=r.values, raw_data_type=r.raw_data_type)
                          for r in device.requests]
         related = [m for m in self.project.mappings if m.device == device.name]
+        layout = allocate_template_mapping_layout(self.project, related) if related else {}
         self.mappings = [BulkMappingSpec(name_pattern=self._suggest_mapping_pattern(m.name, device.name, m.request), request=m.request,
                                          register_type=m.register_type,
-                                         start_register=next_free_register(self.project, register_type=m.register_type, request_name=m.request, default=m.register),
-                                         step=max(1, m.count), enabled=m.enabled, data_type=m.data_type, count=m.count)
+                                         start_register=layout[m.name][0], step=layout[m.name][1],
+                                         enabled=m.enabled, data_type=m.data_type, count=m.count)
                          for m in related]
-        self._refresh_tables()
+        self._sync_transport_fields(); self._refresh_tables()
 
     @staticmethod
     def _suggest_mapping_pattern(name: str, device_name: str, request: str) -> str:

@@ -14,6 +14,7 @@ from .models import (
     TcpClientDevice,
     permissions_for_function,
 )
+from .register_allocator import mapping_width, next_free_register, register_value_width
 
 
 @dataclass(slots=True)
@@ -93,11 +94,35 @@ def _format(pattern: str, *, device: str, index: int, ordinal: int, request: str
 
 
 def _mapping_width(mapping: ServerMapping) -> int:
-    return max(1, mapping.count)
+    return mapping_width(mapping)
 
 
 def _spec_mapping_width(mapping: BulkMappingSpec, request: BulkRequestSpec) -> int:
-    return max(1, mapping.count if mapping.count is not None else request.count)
+    count = mapping.count if mapping.count is not None else request.count
+    return max(1, count) * register_value_width(mapping.data_type, mapping.register_type)
+
+
+def allocate_template_mapping_layout(project: Project, mappings: list[ServerMapping]) -> dict[str, tuple[int, int]]:
+    """Allocate a collision-free repeated layout for mappings cloned from one device.
+
+    The relative register layout is preserved independently inside each Modbus
+    address space. The returned tuple is ``(start_register, step_per_device)``.
+    ``step_per_device`` is the full width of that source device's mapping block,
+    so mappings from generated devices cannot overlap one another.
+    """
+    result: dict[str, tuple[int, int]] = {}
+    by_type: dict[str, list[ServerMapping]] = {}
+    for mapping in mappings:
+        by_type.setdefault(mapping.register_type, []).append(mapping)
+
+    for register_type, group in by_type.items():
+        source_min = min(m.register for m in group)
+        block_width = max((m.register - source_min) + mapping_width(m) for m in group)
+        default = max(1025, source_min)
+        base = next_free_register(project, register_type=register_type, default=default)
+        for mapping in group:
+            result[mapping.name] = (base + (mapping.register - source_min), block_width)
+    return result
 
 
 def _overlap(start_a: int, width_a: int, start_b: int, width_b: int) -> bool:
