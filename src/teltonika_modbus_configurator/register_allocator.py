@@ -5,12 +5,23 @@ from __future__ import annotations
 from .models import Project, ServerMapping
 
 
-def _mapping_count(project: Project, mapping: ServerMapping) -> int:
-    device = next((d for d in project.devices if d.name == mapping.device), None)
-    if device is None:
-        return 1
-    request = next((r for r in device.requests if r.name == mapping.request), None)
-    return max(1, request.count) if request is not None else 1
+_TWO_REGISTER_TYPES = {"int32", "uint32", "float32"}
+
+
+def register_value_width(data_type: str, register_type: str) -> int:
+    """Return Modbus address width for one mapped value.
+
+    32-bit values occupy two 16-bit holding/input registers. Bit areas and
+    8/16-bit values occupy one address per value.
+    """
+    if register_type in {"holding_register", "input_register"} and data_type in _TWO_REGISTER_TYPES:
+        return 2
+    return 1
+
+
+def mapping_width(mapping: ServerMapping) -> int:
+    """Return total address width occupied by a TCP Server mapping."""
+    return max(1, mapping.count) * register_value_width(mapping.data_type, mapping.register_type)
 
 
 def next_free_register(
@@ -23,9 +34,9 @@ def next_free_register(
     """Return the next register after matching occupied ranges.
 
     When ``request_name`` is supplied, mappings with the same request name and
-    register type are preferred. This preserves familiar grouped layouts such as
-    Temperature, Setpoint and Command blocks when cloning an existing device.
-    If no such mappings exist, all mappings of the requested TCP type are used.
+    register type are preferred. If none exist, all mappings of the requested
+    TCP type are used. Mapping datatype width is respected, so float32/int32/
+    uint32 mappings reserve two 16-bit Modbus registers per value.
     """
 
     same_request = [
@@ -39,4 +50,4 @@ def next_free_register(
     if not candidates:
         return default
 
-    return max(m.register + _mapping_count(project, m) for m in candidates)
+    return max(m.register + mapping_width(m) for m in candidates)
