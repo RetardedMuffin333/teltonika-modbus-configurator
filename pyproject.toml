@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "PyYAML>=6.0",
     "paramiko>=3.4",
+    "xlrd>=2.0.1",
 ]
 
 [project.optional-dependencies]
@@ -20,7 +21,7 @@ dev = [
 
 [project.scripts]
 tmc = "teltonika_modbus_configurator.cli:main"
-tmc-gui = "teltonika_modbus_configurator.gui_scada:main"
+tmc-gui = "teltonika_modbus_configurator.gui_carel:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
