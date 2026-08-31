@@ -2,7 +2,7 @@
 
 RutOS derives TCP Server tag permissions from the source Modbus Client request.
 A polled FC03 request therefore exposes a read-only holding register, while a
-(disabled) FC06 request exposes a write-only holding register.  Keeping those
+(disabled) FC06 request exposes a write-only holding register. Keeping those
 server mappings in separate address blocks avoids read block-merging failures in
 clients such as atvise Connect.
 """
@@ -32,6 +32,43 @@ def _source_device(project: Project, device_name: str):
     )
 
 
+def allocate_scada_template_mapping_layout(
+    project: Project,
+    mappings: list[ServerMapping],
+) -> dict[str, tuple[int, int]]:
+    """Allocate cloned mapping blocks while separating read and write access.
+
+    Bulk templates can contain both read-only FC03 feedback mappings and
+    write-only FC06 command mappings in the same holding-register address space.
+    Grouping only by register type would make the gap between e.g. HR1031 and
+    HR1200 part of one huge template block. Grouping by both register type and
+    access keeps those areas compact and preserves the SCADA write separation.
+    """
+    result: dict[str, tuple[int, int]] = {}
+    groups: dict[tuple[str, str], list[ServerMapping]] = {}
+    for mapping in mappings:
+        groups.setdefault((mapping.register_type, mapping.permissions), []).append(mapping)
+
+    for (register_type, permissions), group in groups.items():
+        source_min = min(m.register for m in group)
+        block_width = max((m.register - source_min) + mapping_width(m) for m in group)
+        floor = SCADA_WRITE_HOLDING_START if (
+            register_type == "holding_register" and permissions == "w"
+        ) else 1025
+        base = first_free_register_range(
+            project,
+            register_type=register_type,
+            width=block_width,
+            default=max(floor, source_min),
+        )
+        for mapping in group:
+            result[mapping.name] = (
+                base + (mapping.register - source_min),
+                block_width,
+            )
+    return result
+
+
 def create_scada_write_target(
     project: Project,
     *,
@@ -44,7 +81,7 @@ def create_scada_write_target(
     The first hardware-verified workflow targets one holding register at a time:
     an enabled FC03 request provides feedback, while an otherwise identical
     disabled FC06 request is used only when the TCP Server receives a SCADA
-    write.  The generated write mapping is allocated at/above register 1200 by
+    write. The generated write mapping is allocated at/above register 1200 by
     default so it is not merged into the normal read block by atvise Connect.
     """
     source = _source_device(project, device_name)
@@ -93,7 +130,7 @@ def create_scada_write_target(
         data_type=read_request.data_type,
         byte_order=read_request.byte_order,
         enabled=False,
-        # RutOS requires a configured value for FC06.  Because this request is
+        # RutOS requires a configured value for FC06. Because this request is
         # disabled, the placeholder is not periodically written; incoming TCP
         # Server writes supply the actual value at runtime.
         values="0",
