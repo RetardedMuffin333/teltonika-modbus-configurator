@@ -45,6 +45,19 @@ _DATA_TYPE_ALIASES = ("datatype", "data type", "type", "format")
 _ACCESS_ALIASES = ("direction", "access", "read/write", "r/w", "permission", "mode")
 
 
+def sanitize_carel_name(value: str) -> str:
+    """Convert a cDesign variable path to a RutOS/SCADA-friendly name.
+
+    Carel uses dots for structure members and square brackets for array indexes.
+    Imported names use underscores for structure separators while preserving the
+    array index itself: ``Scheduler.Event_Msk[1].Enabled`` becomes
+    ``Scheduler_Event_Msk1_Enabled``.
+    """
+    name = value.strip().replace(".", "_")
+    name = name.replace("[", "").replace("]", "")
+    return name
+
+
 def _text(value) -> str:
     if value is None:
         return ""
@@ -126,7 +139,7 @@ def preview_rows(sheet_name: str, rows: list[list[object]]) -> tuple[int | None,
         def val(index: int | None) -> str:
             return raw[index] if index is not None and index < len(raw) else ""
 
-        name = val(name_col)
+        name = sanitize_carel_name(val(name_col))
         register = val(reg_col)
         if not name and not register:
             continue
