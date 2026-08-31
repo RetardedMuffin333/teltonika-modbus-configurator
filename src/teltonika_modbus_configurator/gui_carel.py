@@ -37,7 +37,7 @@ class CarelPreviewWindow(tk.Toplevel):
     def __init__(self, parent, preview):
         super().__init__(parent)
         self.title("Carel cDesign XLS import preview")
-        self.geometry("1050x620")
+        self.geometry("1320x650")
         self.transient(parent)
 
         summary = (
@@ -49,31 +49,45 @@ class CarelPreviewWindow(tk.Toplevel):
         ttk.Label(self, text=summary, justify="left").pack(fill="x", padx=10, pady=(10, 6))
 
         if preview.headers:
-            ttk.Label(self, text="Detected columns: " + " | ".join(preview.headers), wraplength=1000).pack(
+            ttk.Label(self, text="Detected columns: " + " | ".join(preview.headers), wraplength=1280).pack(
                 fill="x", padx=10, pady=(0, 8)
             )
 
         tree = ttk.Treeview(
             self,
-            columns=("sheet", "row", "name", "register", "dtype", "access"),
+            columns=("sheet", "row", "name", "register", "modbus_type", "size", "dtype", "access"),
             show="headings",
         )
         for key, title, width in (
             ("sheet", "Sheet", 100), ("row", "Row", 55), ("name", "Name", 330),
-            ("register", "Register", 110), ("dtype", "Data type", 150), ("access", "Access", 120),
+            ("register", "Carel index", 100), ("modbus_type", "Modbus type", 140),
+            ("size", "Size", 55), ("dtype", "Data type", 140), ("access", "Direction", 100),
         ):
             tree.heading(key, text=title)
             tree.column(key, width=width, anchor="w")
         tree.pack(fill="both", expand=True, padx=10, pady=(0, 8))
 
         for item in preview.rows:
-            tree.insert("", "end", values=(item.sheet, item.row_number, item.name, item.register, item.data_type, item.access))
+            tree.insert(
+                "",
+                "end",
+                values=(
+                    item.sheet,
+                    item.row_number,
+                    item.name,
+                    item.register,
+                    item.modbus_type,
+                    item.size,
+                    item.data_type,
+                    item.access,
+                ),
+            )
 
         footer = ttk.Frame(self)
         footer.pack(fill="x", padx=10, pady=(0, 10))
         ttk.Label(
             footer,
-            text="Preview only — v0.4 does not create project requests from this file yet.",
+            text="Preview only — Carel Index is preserved exactly here; the +1 RutOS address option is applied only during import.",
         ).pack(side="left")
         ttk.Button(footer, text="Close", command=self.destroy).pack(side="right")
 
