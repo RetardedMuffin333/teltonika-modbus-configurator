@@ -19,6 +19,8 @@ class CarelImportRow:
     row_number: int
     name: str = ""
     register: str = ""
+    modbus_type: str = ""
+    size: str = ""
     data_type: str = ""
     access: str = ""
     raw: tuple[str, ...] = ()
@@ -33,10 +35,14 @@ class CarelImportPreview:
     rows: list[CarelImportRow]
 
 
-_NAME_ALIASES = ("name", "variable", "symbol", "tag", "parameter")
-_REGISTER_ALIASES = ("register", "address", "addr", "modbus")
-_TYPE_ALIASES = ("type", "datatype", "data type", "format")
-_ACCESS_ALIASES = ("access", "read/write", "r/w", "permission", "mode")
+# cDesign's Documentation export uses the exact headers below.  Keep generic
+# aliases as fallbacks so the preview also remains useful for other Carel exports.
+_NAME_ALIASES = ("variable name", "variable acronym", "name", "variable", "symbol", "tag", "parameter")
+_REGISTER_ALIASES = ("index", "register", "address", "addr", "modbus address")
+_MODBUS_TYPE_ALIASES = ("types", "modbus type", "register type", "area")
+_SIZE_ALIASES = ("size", "length", "count")
+_DATA_TYPE_ALIASES = ("datatype", "data type", "format")
+_ACCESS_ALIASES = ("direction", "access", "read/write", "r/w", "permission", "mode")
 
 
 def _text(value) -> str:
@@ -51,13 +57,25 @@ def _norm(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
 
-def _column_for(headers: list[str], aliases: tuple[str, ...]) -> int | None:
+def _column_for(headers: list[str], aliases: tuple[str, ...], *, allow_contains: bool = True) -> int | None:
+    """Find a column, preferring exact header matches before fuzzy aliases."""
     normalized = [_norm(h) for h in headers]
-    for alias in aliases:
-        a = _norm(alias)
+    normalized_aliases = [_norm(alias) for alias in aliases]
+
+    # Exact matching is critical for cDesign: ``Types`` and ``DataType`` are
+    # distinct columns and must never be confused by the generic word "type".
+    for alias in normalized_aliases:
         for i, header in enumerate(normalized):
-            if header == a or a in header:
+            if header == alias:
                 return i
+
+    if allow_contains:
+        for alias in normalized_aliases:
+            if len(alias) < 4:
+                continue
+            for i, header in enumerate(normalized):
+                if alias in header:
+                    return i
     return None
 
 
@@ -71,7 +89,9 @@ def detect_header_row(rows: list[list[object]], max_scan: int = 60) -> int | Non
             score += 3
         if _column_for(headers, _REGISTER_ALIASES) is not None:
             score += 3
-        if _column_for(headers, _TYPE_ALIASES) is not None:
+        if _column_for(headers, _MODBUS_TYPE_ALIASES) is not None:
+            score += 2
+        if _column_for(headers, _DATA_TYPE_ALIASES) is not None:
             score += 1
         if _column_for(headers, _ACCESS_ALIASES) is not None:
             score += 1
@@ -92,7 +112,9 @@ def preview_rows(sheet_name: str, rows: list[list[object]]) -> tuple[int | None,
     headers = [_text(v) for v in rows[header_idx]]
     name_col = _column_for(headers, _NAME_ALIASES)
     reg_col = _column_for(headers, _REGISTER_ALIASES)
-    type_col = _column_for(headers, _TYPE_ALIASES)
+    modbus_type_col = _column_for(headers, _MODBUS_TYPE_ALIASES)
+    size_col = _column_for(headers, _SIZE_ALIASES)
+    data_type_col = _column_for(headers, _DATA_TYPE_ALIASES)
     access_col = _column_for(headers, _ACCESS_ALIASES)
 
     result: list[CarelImportRow] = []
@@ -114,7 +136,9 @@ def preview_rows(sheet_name: str, rows: list[list[object]]) -> tuple[int | None,
                 row_number=excel_row,
                 name=name,
                 register=register,
-                data_type=val(type_col),
+                modbus_type=val(modbus_type_col),
+                size=val(size_col),
+                data_type=val(data_type_col),
                 access=val(access_col),
                 raw=raw,
             )
