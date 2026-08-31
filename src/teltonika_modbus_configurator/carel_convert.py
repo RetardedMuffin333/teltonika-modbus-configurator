@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .carel_import import CarelImportRow
 from .models import FunctionCode, Project, Request, ServerMapping
@@ -131,12 +131,60 @@ def build_carel_import_plan(
     return result
 
 
-def apply_carel_import_plan(project: Project, items: list[CarelPlannedItem], *, tcp_device_name: str) -> int:
-    """Append all ready planned requests/mappings to the project and return count."""
+def repack_carel_import_items(
+    project: Project,
+    items: list[CarelPlannedItem],
+    *,
+    mapping_start: int = 1025,
+) -> list[CarelPlannedItem]:
+    """Re-pack a selected subset into compact TCP Server address blocks.
+
+    The full preview plan may contain hundreds of rows while the user imports only
+    a filtered/selected subset. Reusing the preview addresses would preserve holes
+    for rows that were not imported, which can make atvise Connect issue block
+    reads across unmapped gaps. Source Carel/RutOS addresses are unchanged; only
+    TCP Server mapping addresses are recomputed independently per Modbus area.
+    """
+    shadow = Project(
+        connections=project.connections,
+        devices=project.devices,
+        tcp_clients=project.tcp_clients,
+        mappings=list(project.mappings),
+        tcp_server=project.tcp_server,
+        source_uci=project.source_uci,
+    )
+    packed: list[CarelPlannedItem] = []
+    for item in items:
+        if item.request is None or item.mapping is None:
+            packed.append(item)
+            continue
+        mapping = item.mapping
+        width = register_value_width(mapping.data_type, mapping.register_type)
+        register = first_free_register_range(
+            shadow,
+            register_type=mapping.register_type,
+            width=width,
+            default=mapping_start,
+        )
+        packed_mapping = replace(mapping, register=register)
+        shadow.mappings.append(packed_mapping)
+        packed.append(replace(item, mapping=packed_mapping))
+    return packed
+
+
+def apply_carel_import_plan(
+    project: Project,
+    items: list[CarelPlannedItem],
+    *,
+    tcp_device_name: str,
+    mapping_start: int = 1025,
+) -> int:
+    """Append ready rows, compacting the selected subset before it is applied."""
     device = next((d for d in project.tcp_clients if d.name == tcp_device_name), None)
     if device is None:
         raise ValueError(f"Modbus TCP client {tcp_device_name!r} does not exist.")
     ready = [item for item in items if item.request is not None and item.mapping is not None]
-    device.requests.extend(item.request for item in ready if item.request is not None)
-    project.mappings.extend(item.mapping for item in ready if item.mapping is not None)
-    return len(ready)
+    packed = repack_carel_import_items(project, ready, mapping_start=mapping_start)
+    device.requests.extend(item.request for item in packed if item.request is not None)
+    project.mappings.extend(item.mapping for item in packed if item.mapping is not None)
+    return len(packed)
