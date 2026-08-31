@@ -164,7 +164,7 @@ class CarelPreviewWindow(tk.Toplevel):
             )
             self.plan_by_iid[iid] = index
         self.info_var.set(
-            f"Visible plan: {ready} ready, {skipped} skipped. Select rows to import; Ctrl/Shift multi-select works."
+            f"Visible plan: {ready} ready, {skipped} skipped. Select rows to import; selected rows are compacted again during import."
         )
         self.import_button.configure(state="normal" if ready else "disabled")
 
@@ -216,7 +216,8 @@ class CarelPreviewWindow(tk.Toplevel):
         if not messagebox.askyesno(
             "Carel import",
             f"Import {len(selected_items)} selected Carel variables into {self.device_var.get()}?\n\n"
-            "This adds requests and TCP Server mappings to the current project. It does not deploy to RutOS.",
+            "Selected rows will be packed into compact TCP Server blocks per Modbus type.\n"
+            "This adds requests and mappings to the current project; it does not deploy to RutOS.",
             parent=self,
         ):
             return
@@ -225,13 +226,14 @@ class CarelPreviewWindow(tk.Toplevel):
                 self.parent.project,
                 selected_items,
                 tcp_device_name=self.device_var.get(),
+                mapping_start=int(self.start_var.get()),
             )
         except Exception as exc:
             messagebox.showerror("Carel import", str(exc), parent=self)
             return
         self.parent.mark_dirty()
         self.parent.refresh_all()
-        self.info_var.set(f"Imported {count} selected Carel variables. Review mappings and Validate before deployment.")
+        self.info_var.set(f"Imported {count} selected Carel variables in compact TCP Server blocks. Review mappings and Validate before deployment.")
         messagebox.showinfo("Carel import", f"Imported {count} Carel variables.", parent=self)
 
 
