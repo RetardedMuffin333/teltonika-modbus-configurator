@@ -1,10 +1,9 @@
 """Helpers for creating SCADA-driven Modbus write targets.
 
 RutOS derives TCP Server tag permissions from the source Modbus Client request.
-A polled FC03 request therefore exposes a read-only holding register, while a
-(disabled) FC06 request exposes a write-only holding register. Keeping those
-server mappings in separate address blocks avoids read block-merging failures in
-clients such as atvise Connect.
+Polled read requests expose read-only server values, while disabled write
+requests expose write-only values. Keeping those mappings in separate address
+blocks avoids block-read failures in clients such as atvise Connect.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from .register_allocator import first_free_register_range, mapping_width
 
 
 SCADA_WRITE_HOLDING_START = 1200
+SCADA_WRITE_COIL_START = 1200
 
 
 @dataclass(slots=True)
@@ -36,14 +36,7 @@ def allocate_scada_template_mapping_layout(
     project: Project,
     mappings: list[ServerMapping],
 ) -> dict[str, tuple[int, int]]:
-    """Allocate cloned mapping blocks while separating read and write access.
-
-    Bulk templates can contain both read-only FC03 feedback mappings and
-    write-only FC06 command mappings in the same holding-register address space.
-    Grouping only by register type would make the gap between e.g. HR1031 and
-    HR1200 part of one huge template block. Grouping by both register type and
-    access keeps those areas compact and preserves the SCADA write separation.
-    """
+    """Allocate cloned mapping blocks while separating read and write access."""
     result: dict[str, tuple[int, int]] = {}
     groups: dict[tuple[str, str], list[ServerMapping]] = {}
     for mapping in mappings:
@@ -52,9 +45,11 @@ def allocate_scada_template_mapping_layout(
     for (register_type, permissions), group in groups.items():
         source_min = min(m.register for m in group)
         block_width = max((m.register - source_min) + mapping_width(m) for m in group)
-        floor = SCADA_WRITE_HOLDING_START if (
-            register_type == "holding_register" and permissions == "w"
-        ) else 1025
+        floor = 1025
+        if permissions == "w" and register_type == "holding_register":
+            floor = SCADA_WRITE_HOLDING_START
+        elif permissions == "w" and register_type == "coil":
+            floor = SCADA_WRITE_COIL_START
         base = first_free_register_range(
             project,
             register_type=register_type,
@@ -62,10 +57,7 @@ def allocate_scada_template_mapping_layout(
             default=max(floor, source_min),
         )
         for mapping in group:
-            result[mapping.name] = (
-                base + (mapping.register - source_min),
-                block_width,
-            )
+            result[mapping.name] = (base + (mapping.register - source_min), block_width)
     return result
 
 
@@ -74,15 +66,14 @@ def create_scada_write_target(
     *,
     device_name: str,
     read_request_name: str,
-    write_block_start: int = SCADA_WRITE_HOLDING_START,
+    write_block_start: int | None = None,
 ) -> ScadaWriteTarget:
-    """Create a disabled FC06 request and write-only TCP mapping.
+    """Create a disabled write companion and write-only TCP mapping.
 
-    The first hardware-verified workflow targets one holding register at a time:
-    an enabled FC03 request provides feedback, while an otherwise identical
-    disabled FC06 request is used only when the TCP Server receives a SCADA
-    write. The generated write mapping is allocated at/above register 1200 by
-    default so it is not merged into the normal read block by atvise Connect.
+    Hardware-verified FC03 feedback uses a disabled FC06 companion. v0.4 also
+    supports writable Carel coils: FC01 feedback uses a disabled FC05 companion.
+    In both cases the command mapping is allocated in a separate 1200+ block so
+    atvise Connect cannot merge write-only values into its normal read block.
     """
     source = _source_device(project, device_name)
     if source is None:
@@ -91,22 +82,29 @@ def create_scada_write_target(
     read_request = next((r for r in source.requests if r.name == read_request_name), None)
     if read_request is None:
         raise ValueError(f"Unknown request {device_name}/{read_request_name}.")
-    if read_request.function != FunctionCode.READ_HOLDING_REGISTERS:
-        raise ValueError("SCADA write targets currently require an FC03 holding-register feedback request.")
     if read_request.count != 1:
-        raise ValueError("SCADA write targets currently support one holding register per request.")
+        raise ValueError("SCADA write targets currently support one value per request.")
+
+    if read_request.function == FunctionCode.READ_HOLDING_REGISTERS:
+        write_function = FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
+        required_mapping_type = "holding_register"
+        default_write_start = SCADA_WRITE_HOLDING_START
+    elif read_request.function == FunctionCode.READ_COILS:
+        write_function = FunctionCode.WRITE_SINGLE_COIL
+        required_mapping_type = "coil"
+        default_write_start = SCADA_WRITE_COIL_START
+    else:
+        raise ValueError("SCADA write targets require FC03 holding-register or FC01 coil feedback.")
 
     feedback = [
         m for m in project.mappings
         if m.device == device_name and m.request == read_request_name and m.enabled
     ]
     if len(feedback) != 1:
-        raise ValueError(
-            "Create exactly one enabled TCP Server mapping for the FC03 feedback request first."
-        )
+        raise ValueError("Create exactly one enabled TCP Server mapping for the feedback request first.")
     feedback_mapping = feedback[0]
-    if feedback_mapping.register_type != "holding_register":
-        raise ValueError("FC03 feedback must be mapped to a TCP holding register.")
+    if feedback_mapping.register_type != required_mapping_type:
+        raise ValueError(f"Feedback must be mapped to TCP {required_mapping_type}.")
 
     write_name = f"{read_request.name}_w"
     if any(r.name == write_name for r in source.requests):
@@ -115,24 +113,22 @@ def create_scada_write_target(
         raise ValueError(f"TCP mapping {write_name!r} already exists.")
 
     width = mapping_width(feedback_mapping)
+    floor = default_write_start if write_block_start is None else int(write_block_start)
     tcp_register = first_free_register_range(
         project,
-        register_type="holding_register",
+        register_type=required_mapping_type,
         width=width,
-        default=max(SCADA_WRITE_HOLDING_START, int(write_block_start)),
+        default=max(default_write_start, floor),
     )
 
     write_request = Request(
         name=write_name,
-        function=FunctionCode.WRITE_SINGLE_HOLDING_REGISTER,
+        function=write_function,
         register=read_request.register,
         count=1,
         data_type=read_request.data_type,
         byte_order=read_request.byte_order,
         enabled=False,
-        # RutOS requires a configured value for FC06. Because this request is
-        # disabled, the placeholder is not periodically written; incoming TCP
-        # Server writes supply the actual value at runtime.
         values="0",
     )
     write_mapping = ServerMapping(
@@ -140,7 +136,7 @@ def create_scada_write_target(
         device=device_name,
         request=write_name,
         register=tcp_register,
-        register_type="holding_register",
+        register_type=required_mapping_type,
         enabled=True,
         permissions="w",
         data_type=feedback_mapping.data_type,
