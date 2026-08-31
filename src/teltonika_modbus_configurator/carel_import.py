@@ -35,13 +35,13 @@ class CarelImportPreview:
     rows: list[CarelImportRow]
 
 
-# cDesign's Documentation export uses the exact headers below.  Keep generic
+# cDesign's Documentation export uses the exact headers below. Keep generic
 # aliases as fallbacks so the preview also remains useful for other Carel exports.
 _NAME_ALIASES = ("variable name", "variable acronym", "name", "variable", "symbol", "tag", "parameter")
 _REGISTER_ALIASES = ("index", "register", "address", "addr", "modbus address")
 _MODBUS_TYPE_ALIASES = ("types", "modbus type", "register type", "area")
 _SIZE_ALIASES = ("size", "length", "count")
-_DATA_TYPE_ALIASES = ("datatype", "data type", "format")
+_DATA_TYPE_ALIASES = ("datatype", "data type", "type", "format")
 _ACCESS_ALIASES = ("direction", "access", "read/write", "r/w", "permission", "mode")
 
 
