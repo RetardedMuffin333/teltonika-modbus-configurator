@@ -1,4 +1,4 @@
-from teltonika_modbus_configurator.carel_import import detect_header_row, preview_rows
+from teltonika_modbus_configurator.carel_import import detect_header_row, preview_rows, sanitize_carel_name
 
 
 def test_detects_register_table_after_title_rows():
@@ -61,6 +61,20 @@ def test_cdesign_documentation_columns_are_not_confused():
     assert parsed[1].modbus_type == "Coil"
     assert parsed[1].data_type == "BOOL"
     assert parsed[1].access == "RW"
+
+
+def test_sanitize_carel_name_replaces_dots_and_removes_array_brackets():
+    assert sanitize_carel_name("Klimati.Scheduler_1.Event_Msk[1].Enabled") == "Klimati_Scheduler_1_Event_Msk1_Enabled"
+    assert sanitize_carel_name("Msk[1]") == "Msk1"
+
+
+def test_preview_uses_sanitized_variable_name():
+    rows = [
+        ["Types", "Index", "Size", "Variable Name", "DataType", "Direction"],
+        ["HoldingRegister", 10, 1, "Scheduler.Event_Msk[1].Enabled", "UInt", "ReadWrite"],
+    ]
+    _, _, parsed = preview_rows("Documentation", rows)
+    assert parsed[0].name == "Scheduler_Event_Msk1_Enabled"
 
 
 def test_requires_name_or_register_columns_for_header_detection():
