@@ -16,6 +16,8 @@ from .register_allocator import first_free_register_range, mapping_width
 
 SCADA_WRITE_HOLDING_START = 1200
 SCADA_WRITE_COIL_START = 1200
+CAREL_AUTO_WRITE_START = 20000
+_32BIT_TYPES = {"int32", "uint32", "float32"}
 
 
 @dataclass(slots=True)
@@ -26,16 +28,10 @@ class ScadaWriteTarget:
 
 
 def _source_device(project: Project, device_name: str):
-    return next(
-        (d for d in [*project.devices, *project.tcp_clients] if d.name == device_name),
-        None,
-    )
+    return next((d for d in [*project.devices, *project.tcp_clients] if d.name == device_name), None)
 
 
-def allocate_scada_template_mapping_layout(
-    project: Project,
-    mappings: list[ServerMapping],
-) -> dict[str, tuple[int, int]]:
+def allocate_scada_template_mapping_layout(project: Project, mappings: list[ServerMapping]) -> dict[str, tuple[int, int]]:
     """Allocate cloned mapping blocks while separating read and write access."""
     result: dict[str, tuple[int, int]] = {}
     groups: dict[tuple[str, str], list[ServerMapping]] = {}
@@ -50,12 +46,7 @@ def allocate_scada_template_mapping_layout(
             floor = SCADA_WRITE_HOLDING_START
         elif permissions == "w" and register_type == "coil":
             floor = SCADA_WRITE_COIL_START
-        base = first_free_register_range(
-            project,
-            register_type=register_type,
-            width=block_width,
-            default=max(floor, source_min),
-        )
+        base = first_free_register_range(project, register_type=register_type, width=block_width, default=max(floor, source_min))
         for mapping in group:
             result[mapping.name] = (base + (mapping.register - source_min), block_width)
     return result
@@ -70,10 +61,10 @@ def create_scada_write_target(
 ) -> ScadaWriteTarget:
     """Create a disabled write companion and write-only TCP mapping.
 
-    Hardware-verified FC03 feedback uses a disabled FC06 companion. v0.4 also
-    supports writable Carel coils: FC01 feedback uses a disabled FC05 companion.
-    In both cases the command mapping is allocated in a separate 1200+ block so
-    atvise Connect cannot merge write-only values into its normal read block.
+    Hardware-verified combinations:
+    - FC01 BOOL feedback -> disabled FC05 command
+    - FC03 8/16-bit holding feedback -> disabled FC06 command
+    - FC03 32-bit holding feedback -> disabled FC16 command
     """
     source = _source_device(project, device_name)
     if source is None:
@@ -83,10 +74,14 @@ def create_scada_write_target(
     if read_request is None:
         raise ValueError(f"Unknown request {device_name}/{read_request_name}.")
     if read_request.count != 1:
-        raise ValueError("SCADA write targets currently support one value per request.")
+        raise ValueError("SCADA write targets currently support one typed value per request.")
 
     if read_request.function == FunctionCode.READ_HOLDING_REGISTERS:
-        write_function = FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
+        write_function = (
+            FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
+            if read_request.data_type in _32BIT_TYPES
+            else FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
+        )
         required_mapping_type = "holding_register"
         default_write_start = SCADA_WRITE_HOLDING_START
     elif read_request.function == FunctionCode.READ_COILS:
@@ -96,10 +91,7 @@ def create_scada_write_target(
     else:
         raise ValueError("SCADA write targets require FC03 holding-register or FC01 coil feedback.")
 
-    feedback = [
-        m for m in project.mappings
-        if m.device == device_name and m.request == read_request_name and m.enabled
-    ]
+    feedback = [m for m in project.mappings if m.device == device_name and m.request == read_request_name and m.enabled]
     if len(feedback) != 1:
         raise ValueError("Create exactly one enabled TCP Server mapping for the feedback request first.")
     feedback_mapping = feedback[0]
