@@ -1,4 +1,8 @@
-from teltonika_modbus_configurator.carel_convert import apply_carel_import_plan, build_carel_import_plan
+from teltonika_modbus_configurator.carel_convert import (
+    apply_carel_import_plan,
+    build_carel_import_plan,
+    repack_carel_import_items,
+)
 from teltonika_modbus_configurator.carel_import import CarelImportRow
 from teltonika_modbus_configurator.models import Project, TcpClientDevice
 
@@ -54,6 +58,39 @@ def test_readwrite_creates_read_path_only_and_apply_adds_ready_rows():
     assert count == 1
     assert project.tcp_clients[0].requests[0].name == "Setpoint"
     assert project.mappings[0].name == "Setpoint"
+
+
+def test_selected_sparse_coils_are_repacked_without_preview_gaps():
+    project = _project()
+    rows = [
+        CarelImportRow("Documentation", 2, "Coil_A", "110", "Coil", "1", "Bool", "Read"),
+        CarelImportRow("Documentation", 3, "Coil_B", "111", "Coil", "1", "Bool", "Read"),
+        CarelImportRow("Documentation", 4, "Coil_C", "150", "Coil", "1", "Bool", "Read"),
+        CarelImportRow("Documentation", 5, "Coil_D", "151", "Coil", "1", "Bool", "Read"),
+        CarelImportRow("Documentation", 6, "Coil_E", "159", "Coil", "1", "Bool", "Read"),
+    ]
+    plan = build_carel_import_plan(project, rows, tcp_device_name="Carel", mapping_start=1025)
+    # Simulate selecting non-adjacent rows from the full preview plan.
+    selected = [plan[0], plan[2], plan[3], plan[4]]
+    packed = repack_carel_import_items(project, selected, mapping_start=1025)
+
+    assert [item.mapping.register for item in packed] == [1025, 1026, 1027, 1028]
+    assert [item.request.register for item in packed] == [111, 151, 152, 160]
+
+
+def test_selected_mixed_areas_pack_independently_and_preserve_32bit_width():
+    project = _project()
+    rows = [
+        CarelImportRow("Documentation", 2, "Coil_A", "1", "Coil", "1", "Bool", "Read"),
+        CarelImportRow("Documentation", 3, "Float_A", "10", "HoldingRegister", "2", "Real", "Read"),
+        CarelImportRow("Documentation", 4, "Float_B", "12", "HoldingRegister", "2", "Real", "Read"),
+        CarelImportRow("Documentation", 5, "Coil_B", "2", "Coil", "1", "Bool", "Read"),
+    ]
+    plan = build_carel_import_plan(project, rows, tcp_device_name="Carel", mapping_start=1200)
+    packed = repack_carel_import_items(project, [plan[0], plan[1], plan[2], plan[3]], mapping_start=1200)
+
+    assert [item.mapping.register for item in packed if item.mapping.register_type == "coil"] == [1200, 1201]
+    assert [item.mapping.register for item in packed if item.mapping.register_type == "holding_register"] == [1200, 1202]
 
 
 def test_unsupported_datatype_is_skipped_not_guessed():
