@@ -40,8 +40,9 @@ class CarelPreviewWindow(tk.Toplevel):
         self.parent = parent
         self.preview = preview
         self.plan = []
+        self.plan_by_iid = {}
         self.title("Carel cDesign XLS import")
-        self.geometry("1450x760")
+        self.geometry("1450x790")
         self.transient(parent)
 
         summary = (
@@ -53,7 +54,7 @@ class CarelPreviewWindow(tk.Toplevel):
         ttk.Label(self, text=summary, justify="left").pack(fill="x", padx=10, pady=(10, 5))
 
         options = ttk.LabelFrame(self, text="Import options")
-        options.pack(fill="x", padx=10, pady=(0, 7))
+        options.pack(fill="x", padx=10, pady=(0, 5))
         ttk.Label(options, text="Target Modbus TCP client:").grid(row=0, column=0, padx=6, pady=6, sticky="w")
         self.device_var = tk.StringVar()
         devices = [d.name for d in parent.project.tcp_clients]
@@ -74,10 +75,29 @@ class CarelPreviewWindow(tk.Toplevel):
         ttk.Entry(options, textvariable=self.start_var, width=8).grid(row=0, column=4, padx=4, pady=6, sticky="w")
         ttk.Button(options, text="Build import plan", command=self.build_plan).grid(row=0, column=5, padx=10, pady=6)
 
+        filters = ttk.LabelFrame(self, text="Filters")
+        filters.pack(fill="x", padx=10, pady=(0, 7))
+        ttk.Label(filters, text="Modbus type:").grid(row=0, column=0, padx=(6, 4), pady=5, sticky="w")
+        self.area_var = tk.StringVar(value="All")
+        areas = ["All"] + sorted({row.modbus_type for row in preview.rows if row.modbus_type})
+        ttk.Combobox(filters, textvariable=self.area_var, values=areas, state="readonly", width=20).grid(
+            row=0, column=1, padx=4, pady=5, sticky="w"
+        )
+        ttk.Label(filters, text="Direction:").grid(row=0, column=2, padx=(14, 4), pady=5, sticky="w")
+        self.direction_var = tk.StringVar(value="All")
+        directions = ["All"] + sorted({row.access for row in preview.rows if row.access})
+        ttk.Combobox(filters, textvariable=self.direction_var, values=directions, state="readonly", width=16).grid(
+            row=0, column=3, padx=4, pady=5, sticky="w"
+        )
+        ttk.Button(filters, text="Apply filter", command=self.apply_filter).grid(row=0, column=4, padx=(12, 4), pady=5)
+        ttk.Button(filters, text="Select all visible", command=self.select_all_visible).grid(row=0, column=5, padx=4, pady=5)
+        ttk.Button(filters, text="Clear selection", command=self.clear_selection).grid(row=0, column=6, padx=4, pady=5)
+
         self.tree = ttk.Treeview(
             self,
             columns=("name", "carel", "area", "dtype", "direction", "fc", "rutos", "server", "status"),
             show="headings",
+            selectmode="extended",
         )
         for key, title, width in (
             ("name", "Name", 330), ("carel", "Carel index", 80), ("area", "Modbus type", 120),
@@ -88,8 +108,7 @@ class CarelPreviewWindow(tk.Toplevel):
             self.tree.column(key, width=width, anchor="w")
         self.tree.pack(fill="both", expand=True, padx=10, pady=(0, 8))
 
-        for row in preview.rows:
-            self.tree.insert("", "end", values=(row.name, row.register, row.modbus_type, row.data_type, row.access, "", "", "", "Parsed"))
+        self._populate_parsed_rows(preview.rows)
 
         footer = ttk.Frame(self)
         footer.pack(fill="x", padx=10, pady=(0, 10))
@@ -98,8 +117,68 @@ class CarelPreviewWindow(tk.Toplevel):
         )
         ttk.Label(footer, textvariable=self.info_var).pack(side="left")
         ttk.Button(footer, text="Close", command=self.destroy).pack(side="right")
-        self.import_button = ttk.Button(footer, text="Import ready rows", command=self.apply_plan, state="disabled")
+        self.import_button = ttk.Button(footer, text="Import selected ready rows", command=self.apply_plan, state="disabled")
         self.import_button.pack(side="right", padx=(0, 8))
+
+    def _row_visible(self, row) -> bool:
+        area = self.area_var.get()
+        direction = self.direction_var.get()
+        return (area == "All" or row.modbus_type == area) and (direction == "All" or row.access == direction)
+
+    def _clear_tree(self):
+        for item_id in self.tree.get_children():
+            self.tree.delete(item_id)
+
+    def _populate_parsed_rows(self, rows):
+        self._clear_tree()
+        for row in rows:
+            if not self._row_visible(row):
+                continue
+            self.tree.insert("", "end", values=(row.name, row.register, row.modbus_type, row.data_type, row.access, "", "", "", "Parsed"))
+
+    def _populate_plan_rows(self):
+        self._clear_tree()
+        self.plan_by_iid = {}
+        ready = 0
+        skipped = 0
+        for index, item in enumerate(self.plan):
+            row = item.source
+            if not self._row_visible(row):
+                continue
+            request = item.request
+            mapping = item.mapping
+            if request and mapping:
+                ready += 1
+                server = f"{mapping.register_type}:{mapping.register}"
+                fc = int(request.function)
+                rutos = request.register
+            else:
+                skipped += 1
+                server = ""
+                fc = ""
+                rutos = ""
+            iid = self.tree.insert(
+                "",
+                "end",
+                values=(row.name, row.register, row.modbus_type, row.data_type, row.access, fc, rutos, server, item.status),
+            )
+            self.plan_by_iid[iid] = index
+        self.info_var.set(
+            f"Visible plan: {ready} ready, {skipped} skipped. Select rows to import; Ctrl/Shift multi-select works."
+        )
+        self.import_button.configure(state="normal" if ready else "disabled")
+
+    def apply_filter(self):
+        if self.plan:
+            self._populate_plan_rows()
+        else:
+            self._populate_parsed_rows(self.preview.rows)
+
+    def select_all_visible(self):
+        self.tree.selection_set(self.tree.get_children())
+
+    def clear_selection(self):
+        self.tree.selection_remove(self.tree.selection())
 
     def build_plan(self):
         if not self.device_var.get():
@@ -117,40 +196,26 @@ class CarelPreviewWindow(tk.Toplevel):
         except Exception as exc:
             messagebox.showerror("Carel import", str(exc), parent=self)
             return
-
-        for item_id in self.tree.get_children():
-            self.tree.delete(item_id)
-        ready = 0
-        skipped = 0
-        for item in self.plan:
-            request = item.request
-            mapping = item.mapping
-            if request and mapping:
-                ready += 1
-                server = f"{mapping.register_type}:{mapping.register}"
-                fc = int(request.function)
-                rutos = request.register
-            else:
-                skipped += 1
-                server = ""
-                fc = ""
-                rutos = ""
-            row = item.source
-            self.tree.insert(
-                "",
-                "end",
-                values=(row.name, row.register, row.modbus_type, row.data_type, row.access, fc, rutos, server, item.status),
-            )
-        self.info_var.set(f"Plan: {ready} ready, {skipped} skipped. ReadWrite rows create the read path only in this stage.")
-        self.import_button.configure(state="normal" if ready else "disabled")
+        self._populate_plan_rows()
 
     def apply_plan(self):
         if not self.plan:
             return
-        ready = sum(1 for item in self.plan if item.request is not None and item.mapping is not None)
+        selected_iids = self.tree.selection()
+        selected_items = []
+        for iid in selected_iids:
+            plan_index = self.plan_by_iid.get(iid)
+            if plan_index is None:
+                continue
+            item = self.plan[plan_index]
+            if item.request is not None and item.mapping is not None:
+                selected_items.append(item)
+        if not selected_items:
+            messagebox.showwarning("Carel import", "Select at least one ready row to import.", parent=self)
+            return
         if not messagebox.askyesno(
             "Carel import",
-            f"Import {ready} ready Carel variables into {self.device_var.get()}?\n\n"
+            f"Import {len(selected_items)} selected Carel variables into {self.device_var.get()}?\n\n"
             "This adds requests and TCP Server mappings to the current project. It does not deploy to RutOS.",
             parent=self,
         ):
@@ -158,7 +223,7 @@ class CarelPreviewWindow(tk.Toplevel):
         try:
             count = apply_carel_import_plan(
                 self.parent.project,
-                self.plan,
+                selected_items,
                 tcp_device_name=self.device_var.get(),
             )
         except Exception as exc:
@@ -166,8 +231,7 @@ class CarelPreviewWindow(tk.Toplevel):
             return
         self.parent.mark_dirty()
         self.parent.refresh_all()
-        self.import_button.configure(state="disabled")
-        self.info_var.set(f"Imported {count} Carel variables into the project. Review mappings and Validate before deployment.")
+        self.info_var.set(f"Imported {count} selected Carel variables. Review mappings and Validate before deployment.")
         messagebox.showinfo("Carel import", f"Imported {count} Carel variables.", parent=self)
 
 
