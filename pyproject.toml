@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "teltonika-modbus-configurator"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "Generate, validate and deploy Teltonika RutOS Modbus configurations"
 readme = "README.md"
 requires-python = ">=3.11"
