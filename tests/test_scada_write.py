@@ -5,7 +5,10 @@ from teltonika_modbus_configurator.models import (
     Request,
     ServerMapping,
 )
-from teltonika_modbus_configurator.scada_write import create_scada_write_target
+from teltonika_modbus_configurator.scada_write import (
+    allocate_scada_template_mapping_layout,
+    create_scada_write_target,
+)
 from teltonika_modbus_configurator.uci_generator import generate_uci
 from teltonika_modbus_configurator.validator import validate_project
 
@@ -98,3 +101,18 @@ def test_generated_uci_uses_disabled_fc06_and_write_only_tag():
     assert "option tag_name 'CMD_Oper_Mode_w'" in uci.modbus_server
     assert "option tag_permissions 'w'" in uci.modbus_server
     assert "option modbus_reg_num '1200'" in uci.modbus_server
+
+
+def test_bulk_layout_keeps_read_and_write_holding_blocks_separate():
+    project = _project()
+    target = create_scada_write_target(
+        project,
+        device_name="RDF_Test",
+        read_request_name="CMD_Oper_Mode",
+    )
+    template_mappings = [target.feedback_mapping, target.mapping]
+
+    layout = allocate_scada_template_mapping_layout(project, template_mappings)
+
+    assert layout["CMD_Oper_Mode"] == (1032, 1)
+    assert layout["CMD_Oper_Mode_w"] == (1201, 1)
