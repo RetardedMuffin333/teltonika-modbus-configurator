@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-08-31
+
+Third release baseline, focused on mixed RTU/TCP aggregation, verified 32-bit datatypes, improved bulk generation, and a hardware-verified SCADA write path.
+
+### Added
+
+- Modbus TCP Client devices alongside RTU devices in the same project and RutOS gateway.
+- Fresh RutOS UCI generation and live import/edit support for TCP client devices.
+- Verified 32-bit request datatype tokens for FLOAT32, INT32 and UINT32 using byte orders `1234`, `2143`, `3412`, `4321`.
+- Datatype-aware TCP mapping widths so 32-bit values reserve two 16-bit Modbus addresses.
+- atvise Connect symbol export for verified `DI`, `DA`, `IRR`, `HRR` and `HRD` forms in addition to integer `IR`/`HR`.
+- Workflow-oriented GUI tab order: Serial Clients -> Devices & Requests -> TCP Clients -> TCP Server -> TCP Server Mappings.
+- SCADA menu action to create a write companion from an FC03 feedback request.
+- Hardware-verified FC03 feedback + disabled FC06 command pattern.
+- Dedicated write-only TCP Server mapping allocation starting at HR1200 by default.
+- SCADA-aware Bulk Generator allocation that keeps read and write-only holding-register blocks separate.
+
+### Changed
+
+- Bulk Generator now supports both RTU and TCP-client templates.
+- Bulk transport controls are context-sensitive for serial vs TCP devices.
+- Template mapping allocation uses first-fit contiguous free ranges, allowing intentional gaps to be reused instead of always appending after the highest existing register.
+- Template-relative mapping offsets are preserved independently per Modbus address space.
+- Width-aware first-fit allocation prevents FLOAT32/INT32/UINT32 collisions.
+- The main GUI entry point now includes the SCADA helper workflow.
+
+### Hardware verification
+
+The v0.3 acceptance work used a mixed RutOS setup with Siemens RDF400MB over RS485 and a Carel controller over Modbus TCP, both exposed through one RutOS Modbus TCP Server to atvise Connect.
+
+Verified behavior included:
+
+- RTU thermostat values read correctly through the aggregated TCP Server.
+- Carel FLOAT32 data read correctly through the RutOS Modbus TCP Client path.
+- Device-specific Carel zero-based register numbering was handled by using the required address offset in the project rather than globally in the application.
+- atvise Connect successfully wrote to a RutOS Write-Only holding register backed by a disabled FC06 request.
+- The same physical thermostat register was polled through an enabled FC03 request and returned the written value as feedback.
+- Keeping Read-Only HR mappings around `HR1031+` and Write-Only mappings around `HR1200+` prevented atvise Connect block-read failures caused by including a Write-Only address in an FC03 read block.
+- Bulk-generated thermostat clones retained the paired read/write architecture and were tested successfully on hardware.
+
+### Deferred to v0.4+
+
+- Carel cDesign register-table import for large projects.
+- 64-bit request datatype generation until exact RutOS request tokens are verified.
+- Additional SCADA write companion patterns beyond the hardware-verified single-register FC03 + FC06 case.
+- Standalone Windows installer.
+
 ## [0.2.0] - 2026-08-20
 
 Second release baseline, focused on write support and safe editing of imported live configurations.

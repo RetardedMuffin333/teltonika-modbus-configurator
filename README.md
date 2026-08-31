@@ -2,79 +2,52 @@
 
 > **Unofficial project.** Teltonika Modbus Configurator is an independent open-source tool and is not affiliated with, endorsed by, or maintained by Teltonika Networks.
 
-A device-agnostic configuration tool for Teltonika RutOS Modbus deployments.
+A device-agnostic configuration tool for Teltonika RutOS Modbus deployments. It is aimed at larger installations where manually creating hundreds of Modbus requests, TCP Server mappings, and atvise Connect symbols becomes impractical.
 
-The goal is to configure large Modbus installations without manually creating hundreds of entries in the RutOS WebUI or duplicating the same TCP register list in atvise Connect.
+## v0.3.0
 
-A device can be a thermostat, chiller, AHU, meter, pump, VFD, or any other Modbus RTU device.
-
-## v0.2.0
-
-v0.2 expands the proven v0.1 RTU workflow with write requests, writable TCP mappings, richer datatypes, and full editing of imported live configurations while retaining stable RutOS UCI identities.
+v0.3 adds mixed Modbus RTU + Modbus TCP Client aggregation, verified 32-bit request datatypes, improved bulk allocation, workflow-oriented GUI tabs, richer atvise symbol export, and the hardware-verified SCADA command/feedback workflow.
 
 ```text
-Modbus RTU devices
-        ↕ RS485
-Teltonika TRB / RutOS Modbus Client
-        ↕
-RutOS Modbus TCP Server
-        ↕
-atvise Connect / other Modbus TCP client
+RTU devices ---- RS485 ----\
+                           \
+                            Teltonika RutOS
+                           / Modbus Client
+TCP devices --- Ethernet -/       |
+                                  v
+                         Modbus TCP Server :502
+                                  |
+                                  v
+                        atvise Connect / SCADA
 ```
 
 ### Current capabilities
 
-- Serial Modbus RTU connections and devices
-- FC01 Read coils
-- FC02 Read discrete inputs
-- FC03 Read holding registers
-- FC04 Read input registers
-- FC05 Set single coil
-- FC06 Set single holding register
-- FC15 Set multiple coils
-- FC16 Set multiple holding registers
-- Separate read-count and write-value semantics
-- Request datatypes currently generated from scratch for:
-  - 8-bit INT / UINT
-  - 16-bit INT / UINT, high-byte-first or low-byte-first
-  - Bool, ASCII, Hex and PDU where supported by RutOS
-- Lossless preservation of imported RutOS datatype tokens not yet decoded by the configurator
-- All four Modbus TCP Server areas: Coil, Discrete Input, Holding Register, Input Register
-- TCP mapping access derived automatically from the source request: read functions → Read-Only, write functions → Write-Only
-- TCP mapping datatypes including Binary, String, Bool, integer widths and FLOAT32/FLOAT64 metadata
-- Automatic internal UCI IDs and `tag_id` relationships
-- Import existing live RutOS Modbus configuration over SSH
-- Exact no-op round trip: import → no edits → byte-for-byte original UCI
-- Edit, rename, add and delete imported connections, devices, requests and TCP mappings
-- Edit imported TCP Server settings
-- Stable provenance IDs for imported RutOS sections, avoiding unrelated ID renumbering
-- YAML save/load including imported UCI provenance IDs
-- Reusable device/request templates
-- Bulk device generation with sequential or explicit/non-sequential Slave IDs
-- Bulk support for read and write requests
-- Automatic next-free TCP register allocation
-- Teltonika TCP register validation: `1025..65536`
-- Validation of function code vs Modbus register area and automatically derived access
-- Collision validation for devices, Slave IDs, symbol names and TCP register ranges
-- Exact RutOS UCI preview
-- Live unified diff against a TRB
-- Guarded SSH apply with local + remote backup
-- Remote rollback snapshots
-- Windows/Tkinter desktop GUI
-- atvise Connect `.Symbol` export for verified Input Register (`IR`) and Holding Register (`HR`) mappings
-
-### Known v0.2 limitations
-
-- Modbus TCP Client devices are not modeled yet.
-- Fresh generation of all 32/64-bit request byte-order variants is intentionally deferred until their exact RutOS UCI tokens are verified on hardware. Imported unknown tokens are preserved losslessly.
-- atvise `.Symbol` export is still intentionally limited to verified `IR` and `HR` forms. Coil/Discrete Input and float/double symbol forms will be added after verification.
-- No standalone Windows installer yet; installation uses Python/pip.
+- Serial Modbus RTU connections and devices.
+- Modbus TCP Client devices alongside RTU devices in the same project/gateway.
+- FC01, FC02, FC03, FC04, FC05, FC06, FC15 and FC16.
+- Separate read-count and write-value semantics.
+- Request datatypes including 8/16-bit integers and verified 32-bit INT/UINT/FLOAT byte orders.
+- Verified RutOS FLOAT32 byte-order tokens: `1234`, `2143`, `3412`, `4321`.
+- All four Modbus TCP Server areas: Coil, Discrete Input, Holding Register and Input Register.
+- Mapping access derived automatically from source request direction: reads -> `r`, writes -> `w`.
+- Width-aware mapping collision detection and allocation for 32-bit values.
+- Live RutOS import over SSH with source-UCI provenance retained.
+- Exact no-op round trip for imported configurations.
+- Editing, adding and deleting imported RTU/TCP devices, requests and mappings while retaining stable UCI identities.
+- YAML save/load.
+- Exact UCI preview and live diff.
+- Guarded SSH deployment with local/remote backups and rollback snapshots.
+- Bulk Device Generator for both RTU and TCP clients.
+- Template cloning with first-fit gap reuse instead of always appending after the highest register.
+- Separate compact allocation of read and SCADA write-only blocks.
+- atvise Connect `.Symbol` export for verified `IR`, `HR`, `DI`, `DA`, `IRR`, `HRR` and `HRD` forms where supported.
+- Dedicated SCADA helper for generating paired FC03 feedback + disabled FC06 write targets.
+- Windows/Tkinter desktop GUI with workflow-oriented tabs.
 
 ## Installation
 
-Python 3.11 or newer is required. Git is useful for cloning/updating the project.
-
-On Windows:
+Python 3.11 or newer is required.
 
 ```powershell
 git clone https://github.com/RetardedMuffin333/teltonika-modbus-configurator.git
@@ -85,126 +58,205 @@ py -m venv .venv
 .\.venv\Scripts\tmc-gui.exe
 ```
 
-PowerShell activation is optional; the commands above work even when `Activate.ps1` is blocked by execution policy.
-
 To update an existing checkout:
 
 ```powershell
 git pull
 .\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\tmc-gui.exe
 ```
 
-## Desktop GUI
+## Desktop workflow
 
-The GUI supports:
-
-- New/open/save YAML projects
-- Import live TRB configuration over SSH
-- Connections editor
-- Devices and requests editor
-- TCP Server mappings editor
-- TCP Server settings
-- Read and write request creation
-- Automatic Read-Only / Write-Only mapping access shown in the mapping tables
-- Bulk Device Generator using any existing device as a template
-- Sequential or explicit/non-sequential Slave IDs
-- Automatic next-free TCP mapping proposals
-- Validation
-- Generated UCI preview
-- Live TRB diff preview
-- Guarded Apply requiring explicit `APPLY` confirmation
-- Rollback to a saved remote snapshot
-- Export of atvise Connect `.Symbol` files
-
-RutOS determines Modbus Server access from the source Modbus Client request. The configurator mirrors that behavior: access is displayed but is not user-editable. FC01–FC04 mappings are Read-Only; FC05/06/15/16 mappings are Write-Only.
-
-## Read/write command-feedback pattern
-
-v0.2 supports the common pattern where one physical holding register is written through one request and independently polled through another:
+The main tabs follow the actual data path:
 
 ```text
-SCADA writes TCP HR1032
-        ↓
-CMD_WorkMode
-FC06 / physical HR101
-Enabled = OFF
-
-physical HR101
-        ↓
-Status_CMD_WorkMode
-FC03 / physical HR101
-Enabled = ON
-        ↓
-SCADA reads TCP HR1035
+1. Modbus Serial Clients
+2. Devices & Requests
+3. Modbus TCP Clients
+4. TCP Server
+5. TCP Server Mappings
 ```
 
-This keeps command and feedback as separate SCADA addresses while both point to the same physical device register.
-
-## Recommended live workflow
-
-For an existing TRB:
+Typical project flow:
 
 ```text
-Import live TRB
-      ↓
-Save YAML
-      ↓
-Validate
-      ↓
-Add / edit / delete configuration
-      ↓
-Preview live diff
-      ↓
-Verify only intended changes are present
-      ↓
-Apply to live TRB
-      ↓
-Fresh import
-      ↓
-Preview live diff again
+create/import client devices
+        ↓
+create requests
+        ↓
+create TCP Server mappings
+        ↓
+validate
+        ↓
+preview UCI / live diff
+        ↓
+deploy to RutOS
+        ↓
+export atvise symbols
 ```
 
-A successful final verification should report no difference between the fresh live import and generated configuration.
+## Mixed RTU + TCP aggregation
 
-### Round-trip safety
+v0.3 can aggregate serial and Ethernet Modbus devices behind one RutOS Modbus TCP Server connection.
 
-Imported projects preserve the original `modbus_client` and `modbus_server` UCI plus stable source IDs for imported entities. With no edits, generation returns the original UCI byte-for-byte.
-
-When an imported entity is edited, v0.2 updates the section with its existing UCI ID rather than reconstructing unrelated sections. Newly added sections receive deterministic IDs above the existing range. Unknown RutOS options in edited sections are retained where possible.
-
-## Bulk generation
-
-The Bulk Device Generator can clone any existing device as a template, including multiple requests and TCP mappings.
-
-The generator supports sequential and explicit/non-sequential Slave IDs and validates:
-
-- duplicate device names;
-- duplicate Slave IDs on the same serial connection;
-- duplicate mapping/symbol names;
-- overlapping TCP register ranges;
-- TCP registers outside `1025..65536`;
-- invalid function/register-area combinations;
-- mapping access against the source request direction.
-
-## atvise Connect symbol export
-
-The exporter uses the same TCP mappings generated for RutOS so the register list does not need to be entered manually a second time.
-
-Example:
+A hardware-tested example is:
 
 ```text
-Joy01_Temp   input_register   1025
-Joy01_SetP   input_register   1050
-Joy01_OnOff  holding_register 1080
+Siemens RDF400MB thermostat -- Modbus RTU --\
+                                              RUT956
+Carel controller ----------- Modbus TCP -----/   |
+                                                  v
+                                      TCP Server Device ID 101
+                                                  |
+                                                  v
+                                           atvise Connect
+```
+
+This allows SCADA to use a single Teltonika Modbus TCP connection while the gateway polls both RTU and TCP source devices.
+
+## SCADA command / feedback workflow
+
+RutOS derives a TCP Server mapping's permission from the source Modbus Client request. A source FC03 becomes Read-Only and a source FC06 becomes Write-Only.
+
+For a SCADA-controlled command, v0.3 uses separate read and write paths to the same physical register:
+
+```text
+READ / feedback
+physical device HR101
+       ↓ FC03, enabled
+RutOS TCP HR1031, Read-Only
+       ↓
+atvise CMD_Oper_Mode
+
+WRITE / command
+atvise CMD_Oper_Mode_w
+       ↓ write TCP HR1200
+RutOS TCP HR1200, Write-Only
+       ↓ FC06, disabled
+physical device HR101
+```
+
+The FC06 request is intentionally **disabled**. If enabled, RutOS would periodically transmit the configured placeholder value. With it disabled, the write-only TCP Server mapping is still available for incoming SCADA writes, and the incoming value becomes the runtime FC06 command.
+
+### Create a write target
+
+Select an existing FC03 feedback request and use:
+
+```text
+SCADA
+└── Create write target from selected RTU request
+```
+
+or the corresponding TCP-client action.
+
+For example, an existing:
+
+```text
+CMD_Oper_Mode
+FC03
+physical register 101
+enabled
+TCP mapping HR1031
 ```
 
 produces:
 
 ```text
-[]
-sym-Joy01_Temp=IR1025,
-sym-Joy01_SetP=IR1050,
-sym-Joy01_OnOff=HR1080,
+CMD_Oper_Mode_w
+FC06
+physical register 101
+disabled
+TCP mapping HR1200
+Access = Write-Only
+```
+
+Write mappings start at `HR1200` by default so they remain separated from normal read blocks.
+
+### Why the separate HR1200+ block matters
+
+During hardware testing, placing a Write-Only mapping immediately after Read-Only holding registers caused atvise Connect to combine them into one FC03 block read. Because the write-only address cannot be read, the complete block returned `Sensor failure`.
+
+Keeping the blocks separate avoids that failure:
+
+```text
+READ feedback
+HR1031..HR1033
+
+WRITE commands
+HR1200..HR1202
+```
+
+The write-only symbol itself may show a read-side `Sensor failure` in a client that insists on polling it; that does not prevent writing to it. Read feedback should be taken from the corresponding FC03 mapping.
+
+## Bulk Generator
+
+The Bulk Generator can clone RTU or TCP-client templates, including requests and TCP Server mappings.
+
+It supports:
+
+- sequential or explicit Slave/Unit IDs;
+- RTU and TCP transports;
+- datatype/byte-order aware mappings;
+- first-fit free-range allocation;
+- 32-bit mapping width accounting;
+- preservation of template-relative offsets;
+- separate address spaces for IR/HR/DI/Coil;
+- separate compact read and SCADA write-only holding-register blocks.
+
+Example hardware-tested template layout:
+
+```text
+                 READ feedback       WRITE commands
+RDF_Test         HR1031-HR1033        HR1200-HR1202
+RDF_Test_02      HR1034-HR1036        HR1203-HR1205
+RDF_Test_03      HR1037-HR1039        HR1206-HR1208
+```
+
+A later mapping such as a Carel FLOAT32 value at `HR1100-HR1101` does not force new thermostat mappings above it if a sufficiently large free gap exists below it.
+
+## 32-bit request datatypes
+
+Verified RutOS request tokens include:
+
+```text
+FLOAT32
+32bit_float1234
+32bit_float2143
+32bit_float3412
+32bit_float4321
+
+INT32
+32bit_int1234
+32bit_int2143
+32bit_int3412
+32bit_int4321
+
+UINT32
+32bit_uint1234
+32bit_uint2143
+32bit_uint3412
+32bit_uint4321
+```
+
+A single FLOAT32 value uses RutOS request `reg_count=1`, while its TCP Server mapping occupies two 16-bit Modbus register addresses for allocation/collision purposes.
+
+Device register numbering remains device-specific. For example, a Carel register documented with zero-based numbering may need `documented address + 1` in RutOS. The configurator does not apply such offsets globally.
+
+## atvise Connect symbol export
+
+The exporter uses the configured TCP Server mappings, avoiding a second manual register list.
+
+Verified prefixes currently include:
+
+```text
+IR   integer Input Register
+HR   integer Holding Register
+DI   Discrete Input
+DA   Coil / digital output
+IRR  FLOAT32 Input Register
+HRR  FLOAT32 Holding Register
+HRD  FLOAT64 Holding Register
 ```
 
 From the GUI:
@@ -215,35 +267,31 @@ Export
 └── atvise Connect Symbol file (enabled only)...
 ```
 
-From the CLI:
+## Import and deployment safety
 
-```bash
-tmc export-symbols project.yaml -o Conn-TRB145.Symbol
-```
+Existing RutOS configurations can be imported over SSH. Imported projects retain the original `modbus_client` and `modbus_server` packages plus stable source IDs. With no edits, generation returns the original UCI byte-for-byte.
 
-## Import an existing TRB
-
-Read a live configuration over SSH:
-
-```bash
-tmc import-live --host <TRB-IP> -o imported.yaml
-```
-
-Or convert exported UCI files:
-
-```bash
-tmc import-uci modbus_client.txt modbus_server.txt -o imported.yaml
-```
-
-The importer resolves relationships such as:
+Recommended live workflow:
 
 ```text
-rtu_server '2'
-request_2 '13'
-tag_id '2.13'
+Import live RutOS
+      ↓
+Save YAML
+      ↓
+Validate
+      ↓
+Edit / bulk generate
+      ↓
+Preview live diff
+      ↓
+Verify intended changes only
+      ↓
+Apply
+      ↓
+Fresh import and compare
 ```
 
-into explicit project relationships while retaining those source IDs for later edits.
+Passwords are prompted interactively and are not stored in YAML. Do not commit site-specific UCI exports, backups, passwords, private keys or production project files to the public repository.
 
 ## CLI
 
@@ -251,62 +299,44 @@ into explicit project relationships while retaining those source IDs for later e
 tmc validate project.yaml
 tmc preview project.yaml
 tmc export project.yaml -o output
-tmc export-symbols project.yaml -o Conn-TRB145.Symbol
-tmc remote-preview project.yaml --host <TRB-IP>
-tmc apply project.yaml --host <TRB-IP>
-tmc rollback <snapshot> --host <TRB-IP>
+tmc export-symbols project.yaml -o Conn-Teltonika.Symbol
+tmc import-live --host <DEVICE-IP> -o imported.yaml
+tmc remote-preview project.yaml --host <DEVICE-IP>
+tmc apply project.yaml --host <DEVICE-IP>
+tmc rollback <snapshot> --host <DEVICE-IP>
 ```
-
-Passwords are prompted interactively and are not stored in YAML. SSH keys are also supported.
-
-## Deployment safety
-
-The configurator does not blindly overwrite a live TRB:
-
-```text
-read live config
-    ↓
-backup locally + remotely
-    ↓
-generate and validate
-    ↓
-show complete diff
-    ↓
-explicit confirmation
-    ↓
-apply UCI + commit + restart
-    ↓
-keep rollback snapshot
-```
-
-Always review the live diff before applying changes.
 
 ## Hardware validation history
 
-### v0.1.0 baseline
+### v0.1.0
 
-v0.1.0 was validated on a real Teltonika TRB145 running RutOS 7.24.2 with a fresh generated batch of 23 RTU devices, three requests per device, and corresponding TCP mappings. RutOS accepted the generated UCI and the configuration worked live.
+Validated on a real TRB145 running RutOS 7.24.2 using a generated 23-device RTU project.
 
 ### v0.2.0
 
-v0.2 retains the proven v0.1 deployment baseline and extends the configurator with full write-request generation, automatic mapping access, and stable editing of imported live UCI.
+Added write-request generation, automatic mapping access and stable editing of imported live UCI while retaining the v0.1 deployment baseline.
 
-## Security and public-repository notes
+### v0.3.0
 
-- Do not commit exported live UCI files, device backups, site-specific project YAML files, SSH private keys, passwords, or other credentials.
-- Review the live diff before every deployment.
-- Prefer test devices or disabled entries for first-time deployment checks.
-- This project modifies live device configuration over SSH; use it only on equipment you are authorized to administer.
+v0.3 was tested with a mixed RTU + Modbus TCP configuration on RutOS hardware, including:
 
-## Planned next work
+- Siemens RDF400MB over RS485/Modbus RTU;
+- Carel controller over Modbus TCP;
+- both sources aggregated through one RutOS Modbus TCP Server;
+- FLOAT32 Carel values through the TCP client path;
+- atvise Connect reading the aggregated server;
+- SCADA writes through a disabled FC06 request and Write-Only TCP mapping;
+- FC03 feedback confirming the written thermostat value;
+- Bulk Generator cloning the same paired command/feedback architecture across multiple thermostat devices.
 
-- Modbus TCP Client devices alongside RTU devices
-- complete verified 32/64-bit request datatype and byte-order generation
-- verified atvise `DI`, `DA`, `IRR`, `HRR`, `HRD` and related symbol forms
-- reusable device-template libraries/catalogs
-- richer bulk editing
-- object-level live diff summaries
-- dependency-aware delete helpers
-- installer/packaging improvements
+The key write-path behavior was verified end-to-end on hardware, not only from generated UCI.
+
+## Known limitations / next work
+
+- No standalone Windows installer yet; installation uses Python/pip.
+- 64-bit request datatype generation is still deferred until exact RutOS request tokens are verified.
+- Some atvise symbol datatype forms remain intentionally rejected rather than guessed.
+- SCADA helper currently focuses on the hardware-verified single-register FC03 + FC06 workflow.
+- Carel register-table import is planned for v0.4 so large cDesign exports can generate requests and TCP Server mappings without manual entry.
 
 See `CHANGELOG.md` for release history.
