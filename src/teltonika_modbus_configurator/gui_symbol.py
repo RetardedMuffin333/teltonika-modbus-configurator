@@ -55,8 +55,10 @@ class SymbolPreviewWindow(tk.Toplevel):
         ttk.Button(filters, text="Select all visible", command=lambda: self.tree.selection_set(self.tree.get_children())).pack(side="left", padx=4)
         ttk.Button(filters, text="Clear selection", command=lambda: self.tree.selection_remove(self.tree.selection())).pack(side="left", padx=4)
 
+        tree_frame = ttk.Frame(self)
+        tree_frame.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         self.tree = ttk.Treeview(
-            self,
+            tree_frame,
             columns=("name", "type", "source", "fc", "dtype", "server", "status"),
             show="headings", selectmode="extended",
         )
@@ -65,7 +67,17 @@ class SymbolPreviewWindow(tk.Toplevel):
             ("fc", "FC", 45), ("dtype", "Data type", 90), ("server", "TCP Server", 125), ("status", "Status", 270),
         ):
             self.tree.heading(key, text=title); self.tree.column(key, width=width, anchor="w")
-        self.tree.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+
+        yscroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        xscroll = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        yscroll.grid(row=0, column=1, sticky="ns")
+        xscroll.grid(row=1, column=0, sticky="ew")
+        self.tree.bind("<MouseWheel>", self._on_mousewheel)
+        self.tree.bind("<Shift-MouseWheel>", self._on_shift_mousewheel)
 
         footer = ttk.Frame(self); footer.pack(fill="x", padx=10, pady=(0, 10))
         self.info_var = tk.StringVar(value="Preview only. Build a plan before importing.")
@@ -75,16 +87,26 @@ class SymbolPreviewWindow(tk.Toplevel):
         self.import_button.pack(side="right", padx=8)
         self.refresh()
 
+    def _on_mousewheel(self, event):
+        self.tree.yview_scroll(int(-event.delta / 120), "units")
+        return "break"
+
+    def _on_shift_mousewheel(self, event):
+        self.tree.xview_scroll(int(-event.delta / 120), "units")
+        return "break"
+
     def _visible(self, row):
         return self.type_var.get() == "All" or row.symbol_type == self.type_var.get()
 
     def refresh(self):
+        y_position = self.tree.yview()[0] if self.tree.get_children() else 0.0
         for iid in self.tree.get_children(): self.tree.delete(iid)
         self.plan_by_iid = {}
         if not self.plan:
             for row in self.preview.rows:
                 if self._visible(row):
                     self.tree.insert("", "end", values=(row.name, row.symbol_type, row.register, "", "", "", "Parsed"))
+            self.tree.yview_moveto(y_position)
             return
         ready = skipped = 0
         for index, item in enumerate(self.plan):
@@ -99,6 +121,7 @@ class SymbolPreviewWindow(tk.Toplevel):
                 values = (row.name, row.symbol_type, row.register, "", "", "", item.status)
             iid = self.tree.insert("", "end", values=values)
             self.plan_by_iid[iid] = index
+        self.tree.yview_moveto(y_position)
         self.info_var.set(f"Visible plan: {ready} ready, {skipped} skipped. Select the rows you want to import.")
         self.import_button.configure(state="normal" if ready else "disabled")
 
