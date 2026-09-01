@@ -68,13 +68,17 @@ class RutOSApiClient:
         if missing:
             raise RuntimeError(f"Missing serial connection settings for live RTU test: {', '.join(missing)}")
         data = self._request_payload(target)
-        # RutOS validates the complete serial-line configuration for this action;
-        # the hardware response showed these fields are mandatory even though the
-        # server itself already references an RTU device section.
+        # RutOS Web API calls this field `type`, while the underlying serial.test
+        # implementation calls it serial_type. Both expect the actual device path,
+        # e.g. /dev/rs485 (the RUT956 validation response explicitly accepts only
+        # /dev/rs232 or /dev/rs485).
+        serial_device = target.serial_type or "/dev/rs485"
+        if not serial_device.startswith("/dev/"):
+            serial_device = f"/dev/{serial_device.lstrip('/')}"
         data.update({
-            "type": target.serial_type or "rs485",
+            "type": serial_device,
             "flowcontrol": target.flowcontrol or "none",
-            "parity": str(target.parity),
+            "parity": str(target.parity).lower(),
             "databits": str(target.databits),
             "stopbits": str(target.stopbits),
             "baudrate": str(target.baudrate),
