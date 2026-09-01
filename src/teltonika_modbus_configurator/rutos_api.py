@@ -51,7 +51,9 @@ class RutOSApiClient:
             timeout=self.timeout,
             verify=self.verify_tls,
         )
-        response.raise_for_status()
+        if not response.ok:
+            details = _http_error_details(response)
+            raise RuntimeError(f"RutOS API HTTP {response.status_code}: {details}")
         payload = response.json()
         if payload.get("success") is False:
             raise RuntimeError(_api_error(payload, "RutOS API request failed"))
@@ -90,6 +92,9 @@ class RutOSApiClient:
                 "This RTU target has no RutOS server configuration ID. Import the live gateway configuration first, then retry."
             )
         data = self._request_payload(target)
+        # RutOS serial request configurations include broadcast explicitly. Some
+        # firmware revisions validate this field for test_request even for reads.
+        data["broadcast"] = "0"
         endpoint_id = str(target.config_id)
         return self.post(
             f"modbus/client/serial/servers/{endpoint_id}/requests/actions/test_request",
@@ -137,6 +142,21 @@ def _display_value(value: Any) -> str:
     if isinstance(value, list) and len(value) == 1:
         return str(value[0])
     return json.dumps(value, ensure_ascii=False)
+
+
+def _http_error_details(response) -> str:
+    """Expose RutOS validation details instead of hiding useful 4xx JSON."""
+    try:
+        payload = response.json()
+    except Exception:
+        text = (response.text or "").strip()
+        return text or response.reason or "HTTP request failed"
+    if isinstance(payload, dict):
+        errors = payload.get("errors") or payload.get("error")
+        if errors:
+            return json.dumps(errors, ensure_ascii=False)
+        return json.dumps(payload, ensure_ascii=False)
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _api_error(payload: dict[str, Any], fallback: str) -> str:
