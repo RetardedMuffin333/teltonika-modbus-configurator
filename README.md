@@ -4,9 +4,9 @@
 
 A device-agnostic configuration tool for Teltonika RutOS Modbus deployments. It is aimed at larger installations where manually creating hundreds of Modbus requests, TCP Server mappings, and atvise Connect symbols becomes impractical.
 
-## v0.3.0
+## v0.4.0
 
-v0.3 adds mixed Modbus RTU + Modbus TCP Client aggregation, verified 32-bit request datatypes, improved bulk allocation, workflow-oriented GUI tabs, richer atvise symbol export, and the hardware-verified SCADA command/feedback workflow.
+v0.4 adds a hardware-verified Carel cDesign import workflow, selective SCADA write-target generation, grouped mapping UI, and usability improvements for larger projects while retaining the mixed RTU + TCP aggregation introduced in v0.3.
 
 ```text
 RTU devices ---- RS485 ----\
@@ -26,24 +26,24 @@ TCP devices --- Ethernet -/       |
 - Serial Modbus RTU connections and devices.
 - Modbus TCP Client devices alongside RTU devices in the same project/gateway.
 - FC01, FC02, FC03, FC04, FC05, FC06, FC15 and FC16.
-- Separate read-count and write-value semantics.
 - Request datatypes including 8/16-bit integers and verified 32-bit INT/UINT/FLOAT byte orders.
-- Verified RutOS FLOAT32 byte-order tokens: `1234`, `2143`, `3412`, `4321`.
 - All four Modbus TCP Server areas: Coil, Discrete Input, Holding Register and Input Register.
 - Mapping access derived automatically from source request direction: reads -> `r`, writes -> `w`.
-- Width-aware mapping collision detection and allocation for 32-bit values.
+- Width-aware allocation and collision detection for 32-bit values.
 - Live RutOS import over SSH with source-UCI provenance retained.
 - Exact no-op round trip for imported configurations.
-- Editing, adding and deleting imported RTU/TCP devices, requests and mappings while retaining stable UCI identities.
-- YAML save/load.
-- Exact UCI preview and live diff.
-- Guarded SSH deployment with local/remote backups and rollback snapshots.
-- Bulk Device Generator for both RTU and TCP clients.
-- Template cloning with first-fit gap reuse instead of always appending after the highest register.
-- Separate compact allocation of read and SCADA write-only blocks.
-- atvise Connect `.Symbol` export for verified `IR`, `HR`, `DI`, `DA`, `IRR`, `HRR` and `HRD` forms where supported.
-- Dedicated SCADA helper for generating paired FC03 feedback + disabled FC06 write targets.
-- Windows/Tkinter desktop GUI with workflow-oriented tabs.
+- YAML save/load, UCI preview, live diff, guarded deployment, backups and rollback snapshots.
+- Bulk Device Generator for RTU and TCP clients.
+- First-fit mapping allocation with separate read/write blocks.
+- atvise Connect `.Symbol` export.
+- Carel cDesign legacy `.xls` import with selective/filterable row import.
+- Carel variable-name sanitizing: `.` -> `_`, `[` and `]` removed.
+- Optional Carel `Index + 1` conversion for device-specific zero-based addressing.
+- Compact TCP Server allocation per Modbus address space after selective Carel import.
+- Grouped/collapsible TCP Server Mappings view by source device.
+- Double-click Edit on requests and mappings.
+- Ctrl/Shift multi-select Delete for requests and mappings.
+- Multi-select SCADA write-target creation so only genuine commands/setpoints are exposed as writable.
 
 ## Installation
 
@@ -68,7 +68,7 @@ git pull
 
 ## Desktop workflow
 
-The main tabs follow the actual data path:
+The main tabs follow the data path:
 
 ```text
 1. Modbus Serial Clients
@@ -83,9 +83,11 @@ Typical project flow:
 ```text
 create/import client devices
         ↓
-create requests
+create/import requests
         ↓
 create TCP Server mappings
+        ↓
+select actual commands/setpoints for SCADA write targets
         ↓
 validate
         ↓
@@ -98,9 +100,7 @@ export atvise symbols
 
 ## Mixed RTU + TCP aggregation
 
-v0.3 can aggregate serial and Ethernet Modbus devices behind one RutOS Modbus TCP Server connection.
-
-A hardware-tested example is:
+A hardware-tested setup is:
 
 ```text
 Siemens RDF400MB thermostat -- Modbus RTU --\
@@ -113,107 +113,130 @@ Carel controller ----------- Modbus TCP -----/   |
                                            atvise Connect
 ```
 
-This allows SCADA to use a single Teltonika Modbus TCP connection while the gateway polls both RTU and TCP source devices.
+SCADA can therefore use a single Teltonika Modbus TCP connection while the gateway polls both RTU and TCP source devices.
+
+## Carel cDesign import
+
+v0.4 can read the native legacy `.xls` documentation export produced by Carel cDesign.
+
+Open:
+
+```text
+Carel
+└── Carel cDesign XLS import...
+```
+
+The importer detects columns such as:
+
+```text
+Types | Index | Size | Variable Name | DataType | Direction
+```
+
+The important fields are interpreted as:
+
+```text
+Types      -> Modbus area
+Index      -> Carel source register/index
+Size       -> value/register width metadata
+DataType   -> Carel value datatype
+Direction  -> export direction metadata
+```
+
+Supported conversions currently include common Carel types such as `Bool`, `USInt`, `SInt`, `UInt`, `Int`, `UDInt`, `DInt` and `Real/FLOAT32`. Unsupported types are skipped rather than guessed.
+
+Imported names are sanitized for RutOS/SCADA use:
+
+```text
+Klimati.Scheduler_1.Event_Msk[1].Enabled
+→ Klimati_Scheduler_1_Event_Msk1_Enabled
+```
+
+### Carel register numbering
+
+Carel projects may use zero-based register numbering. The importer therefore exposes an explicit:
+
+```text
+Carel Index + 1 for RutOS request address
+```
+
+option. This is device/profile-specific and is not applied globally to every Modbus device.
+
+### Selective import and compact server blocks
+
+Carel source indexes may be sparse, but TCP Server mappings are compacted independently per Modbus address space. This avoids atvise Connect block reads across unmapped gaps.
+
+For example sparse Carel coils can become:
+
+```text
+Carel Coil 110 -> TCP Coil 1025
+Carel Coil 150 -> TCP Coil 1026
+Carel Coil 151 -> TCP Coil 1027
+Carel Coil 159 -> TCP Coil 1028
+```
+
+while the source requests still point to the correct Carel addresses.
 
 ## SCADA command / feedback workflow
 
-RutOS derives a TCP Server mapping's permission from the source Modbus Client request. A source FC03 becomes Read-Only and a source FC06 becomes Write-Only.
+RutOS derives TCP Server mapping permission from the source Modbus Client request. Read requests become Read-Only mappings and write requests become Write-Only mappings.
 
-For a SCADA-controlled command, v0.3 uses separate read and write paths to the same physical register:
+The project therefore uses separate feedback and command paths.
 
-```text
-READ / feedback
-physical device HR101
-       ↓ FC03, enabled
-RutOS TCP HR1031, Read-Only
-       ↓
-atvise CMD_Oper_Mode
-
-WRITE / command
-atvise CMD_Oper_Mode_w
-       ↓ write TCP HR1200
-RutOS TCP HR1200, Write-Only
-       ↓ FC06, disabled
-physical device HR101
-```
-
-The FC06 request is intentionally **disabled**. If enabled, RutOS would periodically transmit the configured placeholder value. With it disabled, the write-only TCP Server mapping is still available for incoming SCADA writes, and the incoming value becomes the runtime FC06 command.
-
-### Create a write target
-
-Select an existing FC03 feedback request and use:
+### Hardware-verified write patterns
 
 ```text
-SCADA
-└── Create write target from selected RTU request
+BOOL / Coil
+FC01 enabled feedback
+FC05 disabled command
+
+16-bit Holding Register
+FC03 enabled feedback
+FC06 disabled command
+
+32-bit / FLOAT32 Holding Register
+FC03 enabled feedback
+FC16 disabled command
 ```
 
-or the corresponding TCP-client action.
+The write request is intentionally **disabled**. If enabled, RutOS can periodically transmit its configured placeholder value. With the request disabled, the write-only TCP Server mapping is still available for incoming SCADA writes.
 
-For example, an existing:
+### Deliberate write-target selection
+
+Carel `Direction=ReadWrite` is treated as metadata only. It does **not** automatically mean the variable should be writable from SCADA. A sensor may still be located in a Holding Register.
+
+Recommended workflow:
 
 ```text
-CMD_Oper_Mode
-FC03
-physical register 101
-enabled
-TCP mapping HR1031
+import Carel variables as read paths
+        ↓
+inspect the imported requests
+        ↓
+Ctrl/Shift-select only real commands/setpoints
+        ↓
+SCADA → Create write target from selected TCP request
+        ↓
+disabled FC05 / FC06 / FC16 companion created
 ```
 
-produces:
+New automatic command mappings are kept in a separate high address area (`20000+`) to stay away from normal read polling. Existing v0.3 projects using `HR1200+` remain supported.
+
+## TCP Server Mappings UI
+
+Large projects can contain hundreds of mappings. v0.4 groups mappings by source device:
 
 ```text
-CMD_Oper_Mode_w
-FC06
-physical register 101
-disabled
-TCP mapping HR1200
-Access = Write-Only
+▶ RDF_Test (12 mappings)
+▶ Carel_Test (108 mappings)
+▶ RDF_Test_02 (12 mappings)
 ```
 
-Write mappings start at `HR1200` by default so they remain separated from normal read blocks.
-
-### Why the separate HR1200+ block matters
-
-During hardware testing, placing a Write-Only mapping immediately after Read-Only holding registers caused atvise Connect to combine them into one FC03 block read. Because the write-only address cannot be read, the complete block returned `Sensor failure`.
-
-Keeping the blocks separate avoids that failure:
-
-```text
-READ feedback
-HR1031..HR1033
-
-WRITE commands
-HR1200..HR1202
-```
-
-The write-only symbol itself may show a read-side `Sensor failure` in a client that insists on polling it; that does not prevent writing to it. Read feedback should be taken from the corresponding FC03 mapping.
+Each group can be expanded or collapsed. Individual mappings remain editable/deletable, while group rows are organizational only.
 
 ## Bulk Generator
 
 The Bulk Generator can clone RTU or TCP-client templates, including requests and TCP Server mappings.
 
-It supports:
-
-- sequential or explicit Slave/Unit IDs;
-- RTU and TCP transports;
-- datatype/byte-order aware mappings;
-- first-fit free-range allocation;
-- 32-bit mapping width accounting;
-- preservation of template-relative offsets;
-- separate address spaces for IR/HR/DI/Coil;
-- separate compact read and SCADA write-only holding-register blocks.
-
-Example hardware-tested template layout:
-
-```text
-                 READ feedback       WRITE commands
-RDF_Test         HR1031-HR1033        HR1200-HR1202
-RDF_Test_02      HR1034-HR1036        HR1203-HR1205
-RDF_Test_03      HR1037-HR1039        HR1206-HR1208
-```
-
-A later mapping such as a Carel FLOAT32 value at `HR1100-HR1101` does not force new thermostat mappings above it if a sufficiently large free gap exists below it.
+It supports sequential/explicit IDs, datatype-aware widths, first-fit allocation, independent Modbus address spaces, template-relative offsets, and separate read/write mapping blocks.
 
 ## 32-bit request datatypes
 
@@ -239,13 +262,9 @@ UINT32
 32bit_uint4321
 ```
 
-A single FLOAT32 value uses RutOS request `reg_count=1`, while its TCP Server mapping occupies two 16-bit Modbus register addresses for allocation/collision purposes.
-
-Device register numbering remains device-specific. For example, a Carel register documented with zero-based numbering may need `documented address + 1` in RutOS. The configurator does not apply such offsets globally.
+A single FLOAT32 value uses RutOS request `reg_count=1`, while its TCP Server mapping occupies two 16-bit Modbus addresses for allocation/collision purposes.
 
 ## atvise Connect symbol export
-
-The exporter uses the configured TCP Server mappings, avoiding a second manual register list.
 
 Verified prefixes currently include:
 
@@ -269,8 +288,6 @@ Export
 
 ## Import and deployment safety
 
-Existing RutOS configurations can be imported over SSH. Imported projects retain the original `modbus_client` and `modbus_server` packages plus stable source IDs. With no edits, generation returns the original UCI byte-for-byte.
-
 Recommended live workflow:
 
 ```text
@@ -280,7 +297,7 @@ Save YAML
       ↓
 Validate
       ↓
-Edit / bulk generate
+Edit / import / bulk generate
       ↓
 Preview live diff
       ↓
@@ -314,29 +331,36 @@ Validated on a real TRB145 running RutOS 7.24.2 using a generated 23-device RTU 
 
 ### v0.2.0
 
-Added write-request generation, automatic mapping access and stable editing of imported live UCI while retaining the v0.1 deployment baseline.
+Added write-request generation and safe editing of imported live UCI.
 
 ### v0.3.0
 
-v0.3 was tested with a mixed RTU + Modbus TCP configuration on RutOS hardware, including:
+Validated mixed RTU + Modbus TCP aggregation, Carel FLOAT32 reads, and the FC03 + disabled FC06 thermostat command/feedback workflow through atvise Connect.
 
-- Siemens RDF400MB over RS485/Modbus RTU;
-- Carel controller over Modbus TCP;
-- both sources aggregated through one RutOS Modbus TCP Server;
-- FLOAT32 Carel values through the TCP client path;
-- atvise Connect reading the aggregated server;
-- SCADA writes through a disabled FC06 request and Write-Only TCP mapping;
-- FC03 feedback confirming the written thermostat value;
-- Bulk Generator cloning the same paired command/feedback architecture across multiple thermostat devices.
+### v0.4.0
 
-The key write-path behavior was verified end-to-end on hardware, not only from generated UCI.
+Validated on a real RUT956 with Siemens RDF400MB over RS485, Carel controller over Modbus TCP, and atvise Connect as the upstream SCADA client.
+
+Hardware-verified behavior includes:
+
+- native Carel cDesign `.xls` import into TCP-client requests and TCP Server mappings;
+- Carel `Index + 1` addressing for the tested controller/project;
+- BOOL/Coil reads through FC01;
+- 16-bit Holding Register reads through FC03;
+- FLOAT32 Holding Register reads through FC03;
+- SCADA Coil writes through disabled FC05 companions;
+- SCADA 16-bit Holding Register writes through disabled FC06 companions;
+- SCADA FLOAT32 writes through disabled FC16 companions;
+- feedback reads confirming the written values;
+- compact server-side mapping allocation preventing atvise block-read failures;
+- grouped mapping UI and multi-select request/mapping workflows on a larger imported project.
 
 ## Known limitations / next work
 
 - No standalone Windows installer yet; installation uses Python/pip.
-- 64-bit request datatype generation is still deferred until exact RutOS request tokens are verified.
+- 64-bit request datatype generation remains deferred until exact RutOS request tokens are verified.
 - Some atvise symbol datatype forms remain intentionally rejected rather than guessed.
-- SCADA helper currently focuses on the hardware-verified single-register FC03 + FC06 workflow.
-- Carel register-table import is planned for v0.4 so large cDesign exports can generate requests and TCP Server mappings without manual entry.
+- Carel import currently targets legacy `.xls`; broader XLSX/CSV support can be added later.
+- Carel `Direction` metadata is not treated as authorization to expose a SCADA write path; writable targets are selected deliberately.
 
 See `CHANGELOG.md` for release history.
