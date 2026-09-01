@@ -1,13 +1,13 @@
 """Carel cDesign Modbus export inspection helpers.
 
-v0.4 starts with a non-destructive preview step: read the native legacy .xls
-export, locate likely header rows, and normalize candidate register records.
-Nothing is added to the project until the detected structure has been verified
-against a real cDesign export.
+The normalized preview pipeline is intentionally format-independent: legacy
+`.xls`, modern `.xlsx`, and `.csv` inputs are reduced to plain rows first, then
+run through the same header detection and normalization logic.
 """
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -35,8 +35,6 @@ class CarelImportPreview:
     rows: list[CarelImportRow]
 
 
-# cDesign's Documentation export uses the exact headers below. Keep generic
-# aliases as fallbacks so the preview also remains useful for other Carel exports.
 _NAME_ALIASES = ("variable name", "variable acronym", "name", "variable", "symbol", "tag", "parameter")
 _REGISTER_ALIASES = ("index", "register", "address", "addr", "modbus address")
 _MODBUS_TYPE_ALIASES = ("types", "modbus type", "register type", "area")
@@ -46,16 +44,9 @@ _ACCESS_ALIASES = ("direction", "access", "read/write", "r/w", "permission", "mo
 
 
 def sanitize_carel_name(value: str) -> str:
-    """Convert a cDesign variable path to a RutOS/SCADA-friendly name.
-
-    Carel uses dots for structure members and square brackets for array indexes.
-    Imported names use underscores for structure separators while preserving the
-    array index itself: ``Scheduler.Event_Msk[1].Enabled`` becomes
-    ``Scheduler_Event_Msk1_Enabled``.
-    """
+    """Convert a cDesign variable path to a RutOS/SCADA-friendly name."""
     name = value.strip().replace(".", "_")
-    name = name.replace("[", "").replace("]", "")
-    return name
+    return name.replace("[", "").replace("]", "")
 
 
 def _text(value) -> str:
@@ -71,17 +62,12 @@ def _norm(value: str) -> str:
 
 
 def _column_for(headers: list[str], aliases: tuple[str, ...], *, allow_contains: bool = True) -> int | None:
-    """Find a column, preferring exact header matches before fuzzy aliases."""
     normalized = [_norm(h) for h in headers]
     normalized_aliases = [_norm(alias) for alias in aliases]
-
-    # Exact matching is critical for cDesign: ``Types`` and ``DataType`` are
-    # distinct columns and must never be confused by the generic word "type".
     for alias in normalized_aliases:
         for i, header in enumerate(normalized):
             if header == alias:
                 return i
-
     if allow_contains:
         for alias in normalized_aliases:
             if len(alias) < 4:
@@ -93,7 +79,6 @@ def _column_for(headers: list[str], aliases: tuple[str, ...], *, allow_contains:
 
 
 def detect_header_row(rows: list[list[object]], max_scan: int = 60) -> int | None:
-    """Return the most plausible table-header row index, or None."""
     best: tuple[int, int] | None = None
     for idx, row in enumerate(rows[:max_scan]):
         headers = [_text(v) for v in row]
@@ -108,8 +93,7 @@ def detect_header_row(rows: list[list[object]], max_scan: int = 60) -> int | Non
             score += 1
         if _column_for(headers, _ACCESS_ALIASES) is not None:
             score += 1
-        nonempty = sum(bool(h) for h in headers)
-        if nonempty >= 3:
+        if sum(bool(h) for h in headers) >= 3:
             score += 1
         if score and (best is None or score > best[0]):
             best = (score, idx)
@@ -117,7 +101,6 @@ def detect_header_row(rows: list[list[object]], max_scan: int = 60) -> int | Non
 
 
 def preview_rows(sheet_name: str, rows: list[list[object]]) -> tuple[int | None, list[str], list[CarelImportRow]]:
-    """Normalize one worksheet represented as plain row values."""
     header_idx = detect_header_row(rows)
     if header_idx is None:
         return None, [], []
@@ -159,25 +142,70 @@ def preview_rows(sheet_name: str, rows: list[list[object]]) -> tuple[int | None,
     return header_idx + 1, headers, result
 
 
-def load_carel_xls(path: str | Path) -> CarelImportPreview:
-    """Read a legacy Carel cDesign .xls export using xlrd."""
-    try:
-        import xlrd
-    except ImportError as exc:  # pragma: no cover - packaging installs dependency
-        raise RuntimeError("Carel .xls import requires the 'xlrd' package.") from exc
-
-    workbook = xlrd.open_workbook(str(path), on_demand=True)
+def _preview_from_sheets(path: str | Path, sheets: list[tuple[str, list[list[object]]]]) -> CarelImportPreview:
     best = None
-    sheet_names = workbook.sheet_names()
-    for sheet_name in sheet_names:
-        sheet = workbook.sheet_by_name(sheet_name)
-        rows = [sheet.row_values(i) for i in range(sheet.nrows)]
+    sheet_names = [name for name, _ in sheets]
+    for sheet_name, rows in sheets:
         header_row, headers, parsed = preview_rows(sheet_name, rows)
         candidate = (len(parsed), header_row, headers, parsed)
         if best is None or candidate[0] > best[0]:
             best = candidate
-
     if best is None:
         return CarelImportPreview(str(path), sheet_names, None, [], [])
     _, header_row, headers, parsed = best
     return CarelImportPreview(str(path), sheet_names, header_row, headers, parsed)
+
+
+def load_carel_xls(path: str | Path) -> CarelImportPreview:
+    """Read a legacy Carel cDesign `.xls` export using xlrd."""
+    try:
+        import xlrd
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("Carel .xls import requires the 'xlrd' package.") from exc
+
+    workbook = xlrd.open_workbook(str(path), on_demand=True)
+    sheets = []
+    for sheet_name in workbook.sheet_names():
+        sheet = workbook.sheet_by_name(sheet_name)
+        sheets.append((sheet_name, [sheet.row_values(i) for i in range(sheet.nrows)]))
+    return _preview_from_sheets(path, sheets)
+
+
+def load_carel_xlsx(path: str | Path) -> CarelImportPreview:
+    """Read a modern Excel `.xlsx` export using openpyxl in read-only mode."""
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("Carel .xlsx import requires the 'openpyxl' package.") from exc
+
+    workbook = load_workbook(filename=str(path), read_only=True, data_only=True)
+    sheets = []
+    for sheet in workbook.worksheets:
+        rows = [list(row) for row in sheet.iter_rows(values_only=True)]
+        sheets.append((sheet.title, rows))
+    workbook.close()
+    return _preview_from_sheets(path, sheets)
+
+
+def load_carel_csv(path: str | Path) -> CarelImportPreview:
+    """Read a CSV export with automatic delimiter sniffing."""
+    text = Path(path).read_text(encoding="utf-8-sig")
+    sample = text[:8192]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+    rows = [list(row) for row in csv.reader(text.splitlines(), dialect)]
+    return _preview_from_sheets(path, [("CSV", rows)])
+
+
+def load_carel_file(path: str | Path) -> CarelImportPreview:
+    """Load a supported Carel export based on file extension."""
+    suffix = Path(path).suffix.lower()
+    if suffix == ".xls":
+        return load_carel_xls(path)
+    if suffix == ".xlsx":
+        return load_carel_xlsx(path)
+    if suffix == ".csv":
+        return load_carel_csv(path)
+    raise ValueError(f"Unsupported Carel import format {suffix or '<none>'}. Use .xls, .xlsx, or .csv.")
