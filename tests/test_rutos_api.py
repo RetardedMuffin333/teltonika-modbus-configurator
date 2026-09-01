@@ -49,6 +49,12 @@ def test_serial_test_payload_uses_rutos_server_id(monkeypatch):
         request=Request("RoomTemp", FunctionCode.READ_INPUT_REGISTERS, 5, count=1),
         timeout=1,
         config_id="42",
+        serial_type="/dev/rs485",
+        baudrate=19200,
+        databits=8,
+        parity="none",
+        stopbits=1,
+        flowcontrol="none",
     )
     client = RutOSApiClient("192.168.2.1", "admin", "secret")
     captured = {}
@@ -70,6 +76,12 @@ def test_serial_test_payload_uses_rutos_server_id(monkeypatch):
         "reg_count": "1",
         "data_type": "16bit_int_hi_first",
         "no_brackets": "0",
+        "type": "/dev/rs485",
+        "flowcontrol": "none",
+        "parity": "none",
+        "databits": "8",
+        "stopbits": "1",
+        "baudrate": "19200",
         "broadcast": "0",
     }
     assert result["success"] is True
