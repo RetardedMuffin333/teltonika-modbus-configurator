@@ -1,8 +1,4 @@
-"""Live Modbus diagnostic helpers for v0.6.
-
-The transport is intentionally separated from the GUI so RutOS Web API/SSH
-integration can evolve without changing request selection and result rendering.
-"""
+"""Live Modbus diagnostic helpers for v0.6."""
 
 from __future__ import annotations
 
@@ -21,6 +17,8 @@ class LiveTestTarget:
     request: Request
     host: str | None = None
     port: int | None = None
+    timeout: float | None = None
+    config_id: int | str | None = None
 
     @property
     def summary(self) -> str:
@@ -40,10 +38,15 @@ def project_test_targets(devices: list[Device], tcp_clients: list[TcpClientDevic
     targets: list[LiveTestTarget] = []
     for device in devices:
         for request in device.requests:
-            targets.append(LiveTestTarget("rtu", device.name, device.slave_id, request))
+            targets.append(LiveTestTarget("rtu", device.name, device.slave_id, request, config_id=device.source_id))
     for device in tcp_clients:
         for request in device.requests:
-            targets.append(LiveTestTarget("tcp", device.name, device.server_id, request, device.host, device.port))
+            targets.append(
+                LiveTestTarget(
+                    "tcp", device.name, device.server_id, request,
+                    device.host, device.port, device.timeout, device.source_id,
+                )
+            )
     return targets
 
 
