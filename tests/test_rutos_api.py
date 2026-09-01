@@ -70,6 +70,7 @@ def test_serial_test_payload_uses_rutos_server_id(monkeypatch):
         "reg_count": "1",
         "data_type": "16bit_int_hi_first",
         "no_brackets": "0",
+        "broadcast": "0",
     }
     assert result["success"] is True
 
