@@ -38,7 +38,16 @@ def project_test_targets(devices: list[Device], tcp_clients: list[TcpClientDevic
     targets: list[LiveTestTarget] = []
     for device in devices:
         for request in device.requests:
-            targets.append(LiveTestTarget("rtu", device.name, device.slave_id, request, config_id=device.source_id))
+            targets.append(
+                LiveTestTarget(
+                    "rtu",
+                    device.name,
+                    device.slave_id,
+                    request,
+                    timeout=device.timeout,
+                    config_id=device.source_id,
+                )
+            )
     for device in tcp_clients:
         for request in device.requests:
             targets.append(

@@ -57,11 +57,10 @@ class RutOSApiClient:
             raise RuntimeError(_api_error(payload, "RutOS API request failed"))
         return payload
 
-    def test_tcp(self, target: LiveTestTarget):
-        if target.transport != "tcp":
-            raise ValueError("TCP live transport can only test TCP targets")
+    @staticmethod
+    def _request_payload(target: LiveTestTarget) -> dict[str, str]:
         request = target.request
-        data = {
+        return {
             "server_id": str(target.device_id),
             "timeout": str(target.timeout or 5),
             "function": str(int(request.function)),
@@ -69,30 +68,56 @@ class RutOSApiClient:
             "reg_count": str(request.count),
             "data_type": _request_data_type(request),
             "no_brackets": "0",
+        }
+
+    def test_tcp(self, target: LiveTestTarget):
+        if target.transport != "tcp":
+            raise ValueError("TCP live transport can only test TCP targets")
+        data = self._request_payload(target)
+        data.update({
             "dev_ipaddr": str(target.host),
             "port": str(target.port or 502),
             "delay": "0",
-        }
+        })
         endpoint_id = str(target.config_id or 1)
         return self.post(f"modbus/client/tcp/{endpoint_id}/requests/actions/test_request", data)
 
+    def test_serial(self, target: LiveTestTarget):
+        if target.transport != "rtu":
+            raise ValueError("Serial live transport can only test RTU targets")
+        if target.config_id is None:
+            raise RuntimeError(
+                "This RTU target has no RutOS server configuration ID. Import the live gateway configuration first, then retry."
+            )
+        data = self._request_payload(target)
+        endpoint_id = str(target.config_id)
+        return self.post(
+            f"modbus/client/serial/servers/{endpoint_id}/requests/actions/test_request",
+            data,
+        )
 
-def execute_tcp_test(client: RutOSApiClient, target: LiveTestTarget):
+
+def execute_live_test(client: RutOSApiClient, target: LiveTestTarget):
     def call():
-        payload = client.test_tcp(target)
+        if target.transport == "tcp":
+            payload = client.test_tcp(target)
+        elif target.transport == "rtu":
+            payload = client.test_serial(target)
+        else:
+            raise ValueError(f"Unsupported live Modbus transport: {target.transport}")
         raw = json.dumps(payload, indent=2, ensure_ascii=False)
         return _extract_value(payload), raw
 
     return run_timed_test(call)
 
 
-def _extract_value(payload: Any) -> str:
-    """Return the human-readable value from RutOS test_request responses.
+def execute_tcp_test(client: RutOSApiClient, target: LiveTestTarget):
+    """Compatibility wrapper kept for the first v0.6 TCP slice."""
+    return execute_live_test(client, target)
 
-    Current RUT956 firmware returns decoded results as strings such as
-    ``"[8.312500]"``. Strip only the outer brackets for the GUI while keeping
-    the complete untouched JSON in Raw response.
-    """
+
+def _extract_value(payload: Any) -> str:
+    """Return the human-readable value from RutOS test_request responses."""
     data = payload.get("data") if isinstance(payload, dict) else payload
     if isinstance(data, dict):
         for key in ("value", "result", "response", "data"):
