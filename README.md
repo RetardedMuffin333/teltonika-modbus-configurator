@@ -4,9 +4,9 @@
 
 A device-agnostic configuration tool for Teltonika RutOS Modbus deployments. It is aimed at larger installations where manually creating hundreds of Modbus requests, TCP Server mappings, and atvise Connect symbols becomes impractical.
 
-## v0.5.0
+## v0.6.0
 
-v0.5 adds reusable register-table import profiles, XLS/XLSX/CSV support, atvise Connect Symbol import, verified HRD/DINT handling, and auto-hiding scrollbars throughout the large-project GUI.
+v0.6 adds hardware-verified live Modbus diagnostics through the RutOS Web API: one-shot existing-request tests, ad-hoc reads, and whole-device scans for both Modbus TCP and Modbus RTU/RS485. Diagnostic writes remain intentionally disabled.
 
 ```text
 RTU devices ---- RS485 ----\
@@ -43,6 +43,9 @@ TCP devices --- Ethernet -/       |
 - Grouped/collapsible TCP Server Mappings view by source device.
 - Double-click Edit, Ctrl/Shift multi-select Delete, and multi-select SCADA write-target creation.
 - Auto-hiding vertical and horizontal scrollbars on large main tables and import previews.
+- Live Modbus Tester for existing project requests over TCP and RTU/RS485.
+- Ad-hoc read testing that reuses an existing configured device as the transport template.
+- Sequential whole-device scans across enabled FC01-FC04 requests with per-request status and timing.
 
 ## Installation
 
@@ -113,6 +116,32 @@ Carel controller ----------- Modbus TCP -----/   |
 ```
 
 SCADA can therefore use a single Teltonika Modbus TCP connection while the gateway polls both RTU and TCP source devices.
+
+## Live Modbus diagnostics
+
+Open:
+
+```text
+Tools -> Live Modbus Tester...
+```
+
+The tester logs in to the RutOS Web API and uses the gateway's own Modbus Client `test_request` path, so RTU reads still travel through the configured Teltonika RS485 interface rather than bypassing the gateway.
+
+Three read-only workflows are available:
+
+```text
+Existing Request
+Ad-hoc Test
+Device Scan
+```
+
+`Existing Request` executes an already configured project request and shows response time, decoded value, and the raw RutOS response.
+
+`Ad-hoc Test` reuses an existing RTU/TCP device as the transport template, then lets you override FC, register, count, datatype, and byte order for one diagnostic read. This preserves the real device/slave ID, TCP endpoint, timeout, RutOS section ID, and RS485 settings.
+
+`Device Scan` sequentially tests every enabled FC01-FC04 request on the selected device. Individual failures do not abort the rest of the scan.
+
+v0.6 intentionally does not expose diagnostic writes. Operational FC05/FC06/FC15/FC16 command paths remain handled through the normal project/SCADA workflow.
 
 ## Register-table import profiles
 
@@ -315,12 +344,16 @@ Validated on a real RUT956 with Siemens RDF400MB over RS485, Carel controller ov
 
 Validated profile-driven Carel imports, real atvise Symbol import, Carel scheduler HRD/DINT values as signed INT32 `1234` with register count `2`, compact mapping allocation, and scrollbars across the main and import GUIs.
 
+### v0.6.0
+
+Validated RutOS Web API live diagnostics on the RUT956 for both Carel Modbus TCP and Siemens RDF400MB Modbus RTU/RS485, including existing-request testing, ad-hoc reads, and sequential whole-device scans.
+
 ## Known limitations / next work
 
 - No standalone Windows installer yet; installation uses Python/pip.
 - 64-bit RutOS request datatype generation remains deferred until exact request tokens are verified.
 - Import profiles only support semantics that have been defined explicitly; unknown vendor types are skipped rather than guessed.
-- Live Modbus register testing is planned for v0.6.
+- Live diagnostic writes are intentionally deferred; normal SCADA write paths remain supported.
 - Carel `Direction` metadata is not treated as authorization to expose a SCADA write path; writable targets are selected deliberately.
 
-See `CHANGELOG.md` for release history.
+See `CHANGELOG.md` and `RELEASE_NOTES_0.6.0.md` for release history.

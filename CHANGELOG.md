@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-09-01
+
+Sixth release baseline, focused on hardware-verified live Modbus diagnostics through the RutOS Web API.
+
+### Added
+
+- Live Modbus Tester under the existing `Tools` menu.
+- One-shot live testing of existing project requests.
+- RutOS Web API authentication with HTTP/HTTPS selection.
+- Hardware-verified Modbus TCP live reads through RutOS.
+- Hardware-verified Modbus RTU/RS485 live reads through RutOS.
+- Response time, decoded value, raw response, and detailed RutOS validation errors.
+- Ad-hoc read mode that reuses an existing configured RTU/TCP device as the transport template while overriding FC/register/count/datatype/byte order.
+- Whole-device scan that sequentially tests every enabled FC01-FC04 request on the selected device.
+- Scan result table with request, function, register, count, decoded value, response time, and status.
+- Device scans continue after individual failures and can be stopped manually.
+
+### Changed
+
+- The v0.6 GUI entry point extends the existing Tools menu instead of creating a duplicate menu.
+- RutOS bracketed scalar responses such as `[8.312500]` are normalized for display while raw JSON is preserved.
+- RTU test requests inherit the actual project serial connection settings and send the RutOS device path (`/dev/rs485` or `/dev/rs232`).
+- Live diagnostics remain deliberately read-only; FC05/FC06/FC15/FC16 diagnostic writes are deferred.
+
+### Hardware verification
+
+v0.6 acceptance testing used a real RUT956 with a Siemens RDF400MB thermostat over RS485/Modbus RTU and a Carel controller over Modbus TCP.
+
+Verified end-to-end behavior includes:
+
+- TCP FC01 Coil/BOOL reads;
+- TCP FC03 Holding Register FLOAT32 reads;
+- RTU FC04 reads through `/dev/rs485` using the configured serial settings;
+- existing-request testing;
+- ad-hoc reads on configured RTU and TCP devices;
+- sequential whole-device scans across configured read requests.
+
 ## [0.5.0] - 2026-09-01
 
 Fifth release baseline, focused on reusable import profiles, broader register-table formats, atvise Connect Symbol import, and large-project GUI polish.

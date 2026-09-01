@@ -10,5 +10,5 @@ def test_pyproject_and_runtime_versions_match():
     assert project["project"]["version"] == __version__
 
 
-def test_release_version_is_0_5():
-    assert __version__ == "0.5.0"
+def test_release_version_is_0_6_0():
+    assert __version__ == "0.6.0"
