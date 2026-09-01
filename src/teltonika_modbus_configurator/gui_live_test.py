@@ -12,17 +12,11 @@ READ_FUNCTIONS = {1, 2, 3, 4}
 
 
 class LiveModbusTesterWindow(tk.Toplevel):
-    """Select an existing project request and inspect its live-test parameters.
-
-    Gateway execution is deliberately injected as a callback so the GUI remains
-    independent from the RutOS API/SSH transport implementation.
-    """
-
     def __init__(self, parent, project, execute=None):
         super().__init__(parent)
         self.project = project
         self.execute = execute
-        self.targets = project_test_targets(project.devices, project.tcp_clients)
+        self.targets = project_test_targets(project.devices, project.tcp_clients, project.connections)
         self.target_by_label = {target.summary: target for target in self.targets}
 
         self.title("Live Modbus Tester")
@@ -54,38 +48,19 @@ class LiveModbusTesterWindow(tk.Toplevel):
     def _build_ui(self):
         outer = ttk.Frame(self, padding=12)
         outer.pack(fill="both", expand=True)
-
         ttk.Label(outer, text="Existing project request:").grid(row=0, column=0, sticky="w")
-        self.target_combo = ttk.Combobox(
-            outer,
-            textvariable=self.target_var,
-            values=[target.summary for target in self.targets],
-            state="readonly",
-            width=65,
-        )
+        self.target_combo = ttk.Combobox(outer, textvariable=self.target_var, values=[target.summary for target in self.targets], state="readonly", width=65)
         self.target_combo.grid(row=0, column=1, columnspan=3, sticky="ew", padx=(8, 0))
         self.target_combo.bind("<<ComboboxSelected>>", lambda _event: self._target_changed())
-
-        fields = (
-            ("Protocol", self.protocol_var),
-            ("Device / Server ID", self.device_id_var),
-            ("Endpoint", self.endpoint_var),
-            ("Function", self.function_var),
-            ("Register", self.register_var),
-            ("Count", self.count_var),
-            ("Data type", self.dtype_var),
-            ("Byte order", self.order_var),
-        )
+        fields = (("Protocol", self.protocol_var), ("Device / Server ID", self.device_id_var), ("Endpoint", self.endpoint_var), ("Function", self.function_var), ("Register", self.register_var), ("Count", self.count_var), ("Data type", self.dtype_var), ("Byte order", self.order_var))
         for index, (label, variable) in enumerate(fields, start=1):
             column = 0 if index <= 4 else 2
             row = index if index <= 4 else index - 4
             ttk.Label(outer, text=f"{label}:").grid(row=row, column=column, sticky="w", pady=5)
             ttk.Label(outer, textvariable=variable).grid(row=row, column=column + 1, sticky="w", padx=(8, 20), pady=5)
-
         ttk.Separator(outer).grid(row=5, column=0, columnspan=4, sticky="ew", pady=10)
         self.test_button = ttk.Button(outer, text="TEST REQUEST", command=self._test)
         self.test_button.grid(row=6, column=0, columnspan=4, pady=(0, 12))
-
         ttk.Label(outer, text="Status:").grid(row=7, column=0, sticky="nw")
         ttk.Label(outer, textvariable=self.status_var, wraplength=520, justify="left").grid(row=7, column=1, columnspan=3, sticky="w", padx=(8, 0))
         ttk.Label(outer, text="Response time:").grid(row=8, column=0, sticky="w", pady=5)
@@ -96,7 +71,6 @@ class LiveModbusTesterWindow(tk.Toplevel):
         self.raw = tk.Text(outer, height=8, wrap="word", font=("Consolas", 9))
         self.raw.grid(row=10, column=1, columnspan=3, sticky="nsew", padx=(8, 0), pady=(5, 0))
         self.raw.configure(state="disabled")
-
         outer.columnconfigure(1, weight=1)
         outer.columnconfigure(3, weight=1)
         outer.rowconfigure(10, weight=1)
@@ -111,7 +85,11 @@ class LiveModbusTesterWindow(tk.Toplevel):
         request = target.request
         self.protocol_var.set(target.transport.upper())
         self.device_id_var.set(str(target.device_id))
-        self.endpoint_var.set(f"{target.host}:{target.port}" if target.transport == "tcp" else "RS485 via RutOS")
+        if target.transport == "tcp":
+            self.endpoint_var.set(f"{target.host}:{target.port}")
+        else:
+            serial = f"{target.baudrate or '?'} {target.databits or '?'}{(target.parity or '?')[0].upper()}{target.stopbits or '?'}"
+            self.endpoint_var.set(f"RS485 via RutOS ({serial})")
         self.function_var.set(f"FC{int(request.function):02d}")
         self.register_var.set(str(request.register))
         self.count_var.set(str(request.count))
