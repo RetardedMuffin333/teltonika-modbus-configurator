@@ -53,8 +53,23 @@ CAREL_CDESIGN = ImportProfile(
 )
 
 
+GENERIC_MODBUS_TABLE = ImportProfile(
+    key="generic_modbus_table",
+    label="Generic Modbus table",
+    name_aliases=("name", "tag", "symbol", "node", "point", "variable", "description"),
+    register_aliases=("register", "address", "addr", "offset", "index", "modbus address"),
+    modbus_type_aliases=("area", "register type", "modbus type", "memory", "table"),
+    size_aliases=("size", "length", "count", "register count", "words"),
+    data_type_aliases=("data type", "datatype", "format", "encoding", "type"),
+    access_aliases=("access", "direction", "rights", "permission", "read/write", "r/w"),
+    sanitize_name=identity_name,
+    default_add_one_to_index=False,
+)
+
+
 BUILTIN_IMPORT_PROFILES: dict[str, ImportProfile] = {
     CAREL_CDESIGN.key: CAREL_CDESIGN,
+    GENERIC_MODBUS_TABLE.key: GENERIC_MODBUS_TABLE,
 }
 
 
