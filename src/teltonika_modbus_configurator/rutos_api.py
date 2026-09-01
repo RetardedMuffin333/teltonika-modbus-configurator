@@ -87,15 +87,31 @@ def execute_tcp_test(client: RutOSApiClient, target: LiveTestTarget):
 
 
 def _extract_value(payload: Any) -> str:
+    """Return the human-readable value from RutOS test_request responses.
+
+    Current RUT956 firmware returns decoded results as strings such as
+    ``"[8.312500]"``. Strip only the outer brackets for the GUI while keeping
+    the complete untouched JSON in Raw response.
+    """
     data = payload.get("data") if isinstance(payload, dict) else payload
     if isinstance(data, dict):
         for key in ("value", "result", "response", "data"):
             if key in data:
-                value = data[key]
-                return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+                return _display_value(data[key])
     if data is None:
         return ""
-    return data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
+    return _display_value(data)
+
+
+def _display_value(value: Any) -> str:
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("[") and text.endswith("]"):
+            text = text[1:-1].strip()
+        return text
+    if isinstance(value, list) and len(value) == 1:
+        return str(value[0])
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _api_error(payload: dict[str, Any], fallback: str) -> str:
