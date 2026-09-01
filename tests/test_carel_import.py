@@ -1,4 +1,21 @@
-from teltonika_modbus_configurator.carel_import import detect_header_row, preview_rows, sanitize_carel_name
+from pathlib import Path
+
+from openpyxl import Workbook
+
+from teltonika_modbus_configurator.carel_import import (
+    detect_header_row,
+    load_carel_file,
+    preview_rows,
+    sanitize_carel_name,
+)
+
+
+def _cdesign_rows():
+    return [
+        ["Types", "Index", "Size", "Variable Name", "DataType", "Direction"],
+        ["HoldingRegister", 240, 2, "AI.U5[1]", "Real", "ReadWrite"],
+        ["Coil", 10, 1, "VKLOP.SISTEMA", "Bool", "ReadWrite"],
+    ]
 
 
 def test_detects_register_table_after_title_rows():
@@ -20,7 +37,6 @@ def test_preview_normalizes_candidate_rows():
         ["CMD_Mode", 101.0, "INT16", "Read/Write"],
     ]
     header_row, headers, parsed = preview_rows("Modbus", rows)
-
     assert header_row == 2
     assert headers == ["Variable", "Register", "Type", "Access"]
     assert [row.name for row in parsed] == ["AI_U5_ZunTemp", "CMD_Mode"]
@@ -30,27 +46,12 @@ def test_preview_normalizes_candidate_rows():
 
 
 def test_cdesign_documentation_columns_are_not_confused():
-    rows = [
-        [
-            "Types",
-            "Index",
-            "Size",
-            "Variable Name",
-            "Variable Acronym",
-            "Variable Description",
-            "DataType",
-            "Default Value",
-            "Min",
-            "Max",
-            "UoM",
-            "Direction",
-        ],
-        ["HoldingRegister", 240.0, 2.0, "AI_U5_ZunTemp", "U5", "Outside temp", "REAL", 0, -50, 100, "degC", "R"],
-        ["Coil", 10.0, 1.0, "NO1_Crpalka_Klimati_AR", "NO1", "Pump auto/manual", "BOOL", 0, 0, 1, "", "RW"],
-    ]
-
+    rows = [[
+        "Types", "Index", "Size", "Variable Name", "Variable Acronym",
+        "Variable Description", "DataType", "Default Value", "Min", "Max", "UoM", "Direction",
+    ], ["HoldingRegister", 240.0, 2.0, "AI_U5_ZunTemp", "U5", "Outside temp", "REAL", 0, -50, 100, "degC", "R"],
+        ["Coil", 10.0, 1.0, "NO1_Crpalka_Klimati_AR", "NO1", "Pump auto/manual", "BOOL", 0, 0, 1, "", "RW"]]
     header_row, _, parsed = preview_rows("Documentation", rows)
-
     assert header_row == 1
     assert parsed[0].name == "AI_U5_ZunTemp"
     assert parsed[0].register == "240"
@@ -83,3 +84,46 @@ def test_requires_name_or_register_columns_for_header_detection():
         ["Outside temperature", "degC", -40, 80],
     ]
     assert detect_header_row(rows) is None
+
+
+def test_load_carel_csv_with_semicolon_delimiter(tmp_path: Path):
+    path = tmp_path / "carel.csv"
+    path.write_text(
+        "Types;Index;Size;Variable Name;DataType;Direction\n"
+        "HoldingRegister;240;2;AI.U5[1];Real;ReadWrite\n"
+        "Coil;10;1;VKLOP.SISTEMA;Bool;ReadWrite\n",
+        encoding="utf-8",
+    )
+    preview = load_carel_file(path)
+    assert preview.sheets == ["CSV"]
+    assert [row.name for row in preview.rows] == ["AI_U51", "VKLOP_SISTEMA"]
+    assert preview.rows[0].register == "240"
+    assert preview.rows[0].data_type == "Real"
+
+
+def test_load_carel_xlsx_uses_same_normalized_pipeline(tmp_path: Path):
+    path = tmp_path / "carel.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Documentation"
+    for row in _cdesign_rows():
+        sheet.append(row)
+    workbook.save(path)
+
+    preview = load_carel_file(path)
+    assert preview.sheets == ["Documentation"]
+    assert len(preview.rows) == 2
+    assert preview.rows[0].name == "AI_U51"
+    assert preview.rows[0].modbus_type == "HoldingRegister"
+    assert preview.rows[1].name == "VKLOP_SISTEMA"
+
+
+def test_load_carel_file_rejects_unknown_extension(tmp_path: Path):
+    path = tmp_path / "carel.txt"
+    path.write_text("anything", encoding="utf-8")
+    try:
+        load_carel_file(path)
+    except ValueError as exc:
+        assert ".xls, .xlsx, or .csv" in str(exc)
+    else:
+        raise AssertionError("Unsupported extension should be rejected")
