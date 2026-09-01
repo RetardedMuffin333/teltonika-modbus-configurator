@@ -8,6 +8,7 @@ from teltonika_modbus_configurator.carel_import import (
     preview_rows,
     sanitize_carel_name,
 )
+from teltonika_modbus_configurator.import_profiles import GENERIC_MODBUS_TABLE
 
 
 def _cdesign_rows():
@@ -76,6 +77,21 @@ def test_preview_uses_sanitized_variable_name():
     ]
     _, _, parsed = preview_rows("Documentation", rows)
     assert parsed[0].name == "Scheduler_Event_Msk1_Enabled"
+
+
+def test_generic_profile_accepts_common_column_names_without_carel_sanitizing():
+    rows = [
+        ["Point", "Offset", "Memory", "Encoding", "Rights", "Words"],
+        ["Scheduler.Day", 48, "HR", "int32", "RW", 2],
+        ["Outside Temp", 50, "IR", "float32", "R", 2],
+    ]
+    header_row, _, parsed = preview_rows("CSV", rows, profile=GENERIC_MODBUS_TABLE)
+    assert header_row == 1
+    assert parsed[0].name == "Scheduler.Day"
+    assert parsed[0].register == "48"
+    assert parsed[0].modbus_type == "HR"
+    assert parsed[0].data_type == "int32"
+    assert parsed[0].size == "2"
 
 
 def test_requires_name_or_register_columns_for_header_detection():
