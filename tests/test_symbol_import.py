@@ -28,9 +28,8 @@ def test_load_symbol_file_parses_real_syntax(tmp_path):
     assert preview.ignored_lines == 0
 
 
-def test_symbol_plan_maps_known_types_and_leaves_hrd_unsupported():
+def test_symbol_plan_maps_known_types_including_verified_hrd_dint():
     project = Project(tcp_clients=[TcpClientDevice(name="PLC", host="10.0.0.2")])
-    rows = load_symbol_file_from_text = None
     from teltonika_modbus_configurator.symbol_import import SymbolRow
     rows = [
         SymbolRow(1, "Temperature", "IRR", 97),
@@ -45,8 +44,19 @@ def test_symbol_plan_maps_known_types_and_leaves_hrd_unsupported():
     assert plan[1].request.data_type == "int16"
     assert plan[1].mapping.register_type == "holding_register"
     assert plan[1].mapping.register == 1025
-    assert plan[2].request is None
-    assert "HRD" in plan[2].status
+
+    hrd = plan[2]
+    assert hrd.request is not None
+    assert hrd.mapping is not None
+    assert hrd.request.register == 84
+    assert hrd.request.data_type == "int32"
+    assert hrd.request.byte_order == "1234"
+    assert hrd.request.count == 2
+    assert hrd.mapping.register_type == "holding_register"
+    assert hrd.mapping.data_type == "int32"
+    assert hrd.mapping.count == 1
+    # HR at 1025 consumes one register, HRD then consumes 1026-1027.
+    assert hrd.mapping.register == 1026
 
 
 def test_symbol_import_supports_rtu_target_and_offset():
@@ -74,3 +84,15 @@ def test_selected_float_rows_are_repacked_without_gaps():
     plan = build_symbol_import_plan(project, rows, device_name="PLC", mapping_start=1100)
     assert apply_symbol_import_plan(project, [plan[0], plan[2]], device_name="PLC", mapping_start=1100) == 2
     assert [m.register for m in project.mappings] == [1100, 1102]
+
+
+def test_selected_hrd_rows_are_repacked_as_two_register_values():
+    project = Project(tcp_clients=[TcpClientDevice(name="PLC", host="10.0.0.2")])
+    from teltonika_modbus_configurator.symbol_import import SymbolRow
+    rows = [
+        SymbolRow(1, "Day", "HRD", 47),
+        SymbolRow(2, "CopyToDay", "HRD", 50),
+    ]
+    plan = build_symbol_import_plan(project, rows, device_name="PLC", mapping_start=1200)
+    assert [item.request.count for item in plan] == [2, 2]
+    assert [item.mapping.register for item in plan] == [1200, 1202]
