@@ -9,6 +9,7 @@ from .carel_convert import apply_carel_import_plan, build_carel_import_plan
 from .carel_import import load_carel_xls
 from .gui import vars_for
 from .gui_scada import ScadaProjectEditor
+from .gui_widgets import tree_with_scrollbars
 from .models import ServerMapping
 
 
@@ -28,74 +29,58 @@ class CarelProjectEditor(ScadaProjectEditor):
             tab,
             columns=("request", "type", "register", "perm", "dtype", "count", "enabled"),
             show="tree headings",
-            selectmode="browse",
         )
         self.mappings_tree.heading("#0", text="Source device / Mapping")
-        self.mappings_tree.column("#0", width=280, anchor="w")
+        self.mappings_tree.column("#0", width=250, anchor="w")
         for key, title, width in (
-            ("request", "Request", 190), ("type", "TCP type", 125), ("register", "Register", 75),
-            ("perm", "Access (auto)", 90), ("dtype", "Data type", 90), ("count", "Count", 55),
+            ("request", "Request", 190), ("type", "Type", 120), ("register", "Register", 80),
+            ("perm", "Access", 65), ("dtype", "Data type", 100), ("count", "Count", 55),
             ("enabled", "Enabled", 65),
         ):
             self.mappings_tree.heading(key, text=title)
             self.mappings_tree.column(key, width=width, anchor="w")
         self.mappings_tree.pack(fill="both", expand=True)
-        buttons = ttk.Frame(tab)
-        buttons.pack(fill="x", pady=(8, 0))
-        ttk.Button(buttons, text="Add", command=self.add_mapping).pack(side="left", padx=3)
-        ttk.Button(buttons, text="Edit", command=self.edit_mapping).pack(side="left", padx=3)
-        ttk.Button(buttons, text="Delete", command=self.delete_mapping).pack(side="left", padx=3)
-        ttk.Button(buttons, text="Expand all", command=lambda: self._set_mapping_groups_open(True)).pack(side="right", padx=3)
-        ttk.Button(buttons, text="Collapse all", command=lambda: self._set_mapping_groups_open(False)).pack(side="right", padx=3)
 
-    def _mapping_index_from_selection(self):
-        selected = self.mappings_tree.selection()
-        if not selected:
-            return None
-        iid = selected[0]
-        if not iid.startswith("mapping::"):
-            return None
-        try:
-            return int(iid.split("::", 1)[1])
-        except ValueError:
-            return None
+        buttons = ttk.Frame(tab); buttons.pack(fill="x", pady=(8, 0))
+        ttk.Button(buttons, text="Add", command=self.add_mapping).pack(side="left")
+        ttk.Button(buttons, text="Edit", command=self.edit_mapping).pack(side="left", padx=(6, 0))
+        ttk.Button(buttons, text="Delete", command=self.delete_mapping).pack(side="left", padx=(6, 0))
+        ttk.Button(buttons, text="Collapse all", command=lambda: self._set_mapping_groups(False)).pack(side="right")
+        ttk.Button(buttons, text="Expand all", command=lambda: self._set_mapping_groups(True)).pack(side="right", padx=(0, 6))
 
-    def _set_mapping_groups_open(self, opened: bool):
+    def _set_mapping_groups(self, opened: bool):
         for iid in self.mappings_tree.get_children(""):
             self.mappings_tree.item(iid, open=opened)
 
     def refresh_mappings(self):
+        if not hasattr(self, "mappings_tree"):
+            return
         open_devices = set()
         for iid in self.mappings_tree.get_children(""):
             if self.mappings_tree.item(iid, "open"):
-                values = self.mappings_tree.item(iid, "values")
-                if values:
-                    open_devices.add(values[0])
-        for iid in self.mappings_tree.get_children(""):
-            self.mappings_tree.delete(iid)
-
-        grouped: dict[str, list[tuple[int, object]]] = {}
+                open_devices.add(self.mappings_tree.item(iid, "text"))
+        self.mappings_tree.delete(*self.mappings_tree.get_children())
+        grouped = {}
         for index, mapping in enumerate(self.project.mappings):
             grouped.setdefault(mapping.device, []).append((index, mapping))
-
-        for device_number, (device_name, mappings) in enumerate(grouped.items()):
-            parent_iid = f"device::{device_number}"
-            self.mappings_tree.insert(
-                "", "end", iid=parent_iid,
-                text=f"{device_name}  ({len(mappings)} mappings)",
-                values=(device_name, "", "", "", "", "", ""),
-                open=device_name in open_devices,
-            )
+        for device_name, mappings in grouped.items():
+            group_iid = f"device::{device_name}"
+            self.mappings_tree.insert("", "end", iid=group_iid, text=device_name, open=(device_name in open_devices or not open_devices), values=("", "", "", "", "", "", ""))
             for index, mapping in mappings:
-                request = self._request_for_mapping(mapping.device, mapping.request)
-                access = request.function and ("r" if request.function.is_read else "w") if request else mapping.permissions
                 self.mappings_tree.insert(
-                    parent_iid, "end", iid=f"mapping::{index}", text=mapping.name,
-                    values=(
-                        mapping.request, mapping.register_type, mapping.register, access,
-                        mapping.data_type, mapping.count, "Yes" if mapping.enabled else "No",
-                    ),
+                    group_iid, "end", iid=f"mapping::{index}", text=mapping.name,
+                    values=(mapping.request, mapping.register_type, mapping.register, mapping.permissions,
+                            mapping.data_type, mapping.count, "Yes" if mapping.enabled else "No"),
                 )
+
+    def _mapping_index_from_selection(self):
+        selection = self.mappings_tree.selection()
+        if not selection:
+            return None
+        iid = selection[0]
+        if not iid.startswith("mapping::"):
+            return None
+        return int(iid.split("::", 1)[1])
 
     def edit_mapping(self):
         index = self._mapping_index_from_selection()
@@ -182,23 +167,21 @@ class CarelPreviewWindow(tk.Toplevel):
             text="Create SCADA write companions for selected ReadWrite Coil/HoldingRegister values",
             variable=self.write_companions_var,
         ).grid(row=1, column=0, columnspan=6, padx=6, pady=(0, 6), sticky="w")
-        ttk.Label(options, text="Automatic write mappings use a separate 20000+ block to stay away from read polling.").grid(row=2, column=0, columnspan=6, padx=24, pady=(0, 6), sticky="w")
 
-        filters = ttk.LabelFrame(self, text="Filters")
-        filters.pack(fill="x", padx=10, pady=(0, 7))
-        ttk.Label(filters, text="Modbus type:").grid(row=0, column=0, padx=(6, 4), pady=5, sticky="w")
+        filters = ttk.Frame(self); filters.pack(fill="x", padx=10, pady=(0, 5))
+        ttk.Label(filters, text="Modbus type:").pack(side="left")
         self.area_var = tk.StringVar(value="All")
-        areas = ["All"] + sorted({row.modbus_type for row in preview.rows if row.modbus_type})
-        ttk.Combobox(filters, textvariable=self.area_var, values=areas, state="readonly", width=20).grid(row=0, column=1, padx=4, pady=5, sticky="w")
-        ttk.Label(filters, text="Direction:").grid(row=0, column=2, padx=(14, 4), pady=5, sticky="w")
+        areas = ["All"] + sorted({r.modbus_type for r in preview.rows if r.modbus_type})
+        ttk.Combobox(filters, textvariable=self.area_var, values=areas, state="readonly", width=20).pack(side="left", padx=(4, 12))
+        ttk.Label(filters, text="Direction:").pack(side="left")
         self.direction_var = tk.StringVar(value="All")
-        directions = ["All"] + sorted({row.access for row in preview.rows if row.access})
-        ttk.Combobox(filters, textvariable=self.direction_var, values=directions, state="readonly", width=16).grid(row=0, column=3, padx=4, pady=5, sticky="w")
-        ttk.Button(filters, text="Apply filter", command=self.apply_filter).grid(row=0, column=4, padx=(12, 4), pady=5)
-        ttk.Button(filters, text="Select all visible", command=self.select_all_visible).grid(row=0, column=5, padx=4, pady=5)
-        ttk.Button(filters, text="Clear selection", command=self.clear_selection).grid(row=0, column=6, padx=4, pady=5)
+        directions = ["All"] + sorted({r.access for r in preview.rows if r.access})
+        ttk.Combobox(filters, textvariable=self.direction_var, values=directions, state="readonly", width=16).pack(side="left", padx=(4, 12))
+        ttk.Button(filters, text="Apply filter", command=self.apply_filter).pack(side="left")
+        ttk.Button(filters, text="Select all visible", command=self.select_all_visible).pack(side="left", padx=(12, 4))
+        ttk.Button(filters, text="Clear selection", command=self.clear_selection).pack(side="left")
 
-        self.tree = ttk.Treeview(
+        tree_frame, self.tree = tree_with_scrollbars(
             self,
             columns=("name", "carel", "area", "dtype", "direction", "fc", "rutos", "server", "status"),
             show="headings", selectmode="extended",
@@ -209,7 +192,7 @@ class CarelPreviewWindow(tk.Toplevel):
             ("rutos", "RutOS addr", 75), ("server", "TCP Server", 105), ("status", "Status", 260),
         ):
             self.tree.heading(key, text=title); self.tree.column(key, width=width, anchor="w")
-        self.tree.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        tree_frame.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         self._populate_parsed_rows(preview.rows)
 
         footer = ttk.Frame(self); footer.pack(fill="x", padx=10, pady=(0, 10))

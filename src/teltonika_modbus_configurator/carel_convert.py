@@ -1,4 +1,4 @@
-"""Convert parsed Carel cDesign rows into RutOS TCP-client requests and mappings."""
+"""Convert parsed register-table rows into RutOS TCP-client requests and mappings."""
 
 from __future__ import annotations
 
@@ -18,17 +18,23 @@ class CarelPlannedItem:
     status: str
 
 
+# Carel cDesign names plus common generic-table aliases. Keeping the conversion
+# normalized here lets different import profiles share the same planning code.
 _TYPE_MAP = {
-    "bool": ("bool", "none"), "usint": ("uint8", "none"), "sint": ("int8", "none"),
-    "uint": ("uint16", "high_byte_first"), "int": ("int16", "high_byte_first"),
-    "udint": ("uint32", "1234"), "dint": ("int32", "1234"),
-    "real": ("float32", "1234"), "float": ("float32", "1234"),
+    "bool": ("bool", "none"), "boolean": ("bool", "none"),
+    "usint": ("uint8", "none"), "uint8": ("uint8", "none"),
+    "sint": ("int8", "none"), "int8": ("int8", "none"),
+    "uint": ("uint16", "high_byte_first"), "uint16": ("uint16", "high_byte_first"),
+    "int": ("int16", "high_byte_first"), "int16": ("int16", "high_byte_first"),
+    "udint": ("uint32", "1234"), "uint32": ("uint32", "1234"),
+    "dint": ("int32", "1234"), "int32": ("int32", "1234"),
+    "real": ("float32", "1234"), "float": ("float32", "1234"), "float32": ("float32", "1234"),
 }
 _AREA_MAP = {
-    "coil": (FunctionCode.READ_COILS, "coil"),
-    "discreteinput": (FunctionCode.READ_DISCRETE_INPUTS, "discrete_input"),
-    "holdingregister": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register"),
-    "inputregister": (FunctionCode.READ_INPUT_REGISTERS, "input_register"),
+    "coil": (FunctionCode.READ_COILS, "coil"), "coils": (FunctionCode.READ_COILS, "coil"), "da": (FunctionCode.READ_COILS, "coil"),
+    "discreteinput": (FunctionCode.READ_DISCRETE_INPUTS, "discrete_input"), "discreteinputs": (FunctionCode.READ_DISCRETE_INPUTS, "discrete_input"), "di": (FunctionCode.READ_DISCRETE_INPUTS, "discrete_input"),
+    "holdingregister": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register"), "holdingregisters": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register"), "hr": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register"),
+    "inputregister": (FunctionCode.READ_INPUT_REGISTERS, "input_register"), "inputregisters": (FunctionCode.READ_INPUT_REGISTERS, "input_register"), "ir": (FunctionCode.READ_INPUT_REGISTERS, "input_register"),
 }
 
 
@@ -56,11 +62,11 @@ def build_carel_import_plan(project: Project, rows: list[CarelImportRow], *, tcp
         if area is None:
             result.append(CarelPlannedItem(row, None, None, f"Skip: unsupported Modbus type {row.modbus_type or '<empty>'}")); continue
         if dtype is None:
-            result.append(CarelPlannedItem(row, None, None, f"Skip: unsupported Carel datatype {row.data_type or '<empty>'}")); continue
+            result.append(CarelPlannedItem(row, None, None, f"Skip: unsupported datatype {row.data_type or '<empty>'}")); continue
         try:
-            carel_index = int(row.register)
+            source_index = int(row.register)
         except (TypeError, ValueError):
-            result.append(CarelPlannedItem(row, None, None, f"Skip: invalid Carel index {row.register!r}")); continue
+            result.append(CarelPlannedItem(row, None, None, f"Skip: invalid register/index {row.register!r}")); continue
         if not row.name:
             result.append(CarelPlannedItem(row, None, None, "Skip: empty variable name")); continue
         if row.name in existing_request_names or row.name in planned_request_names:
@@ -69,7 +75,7 @@ def build_carel_import_plan(project: Project, rows: list[CarelImportRow], *, tcp
             result.append(CarelPlannedItem(row, None, None, f"Skip: duplicate mapping name {row.name}")); continue
 
         function, register_type = area; data_type, byte_order = dtype
-        request = Request(name=row.name, function=function, register=carel_index + (1 if add_one_to_index else 0), count=1, data_type=data_type, byte_order=byte_order, enabled=True)
+        request = Request(name=row.name, function=function, register=source_index + (1 if add_one_to_index else 0), count=1, data_type=data_type, byte_order=byte_order, enabled=True)
         width = register_value_width(data_type, register_type)
         server_register = first_free_register_range(shadow, register_type=register_type, width=width, default=mapping_start)
         mapping = ServerMapping(name=row.name, device=tcp_device_name, request=row.name, register=server_register, register_type=register_type, enabled=True, permissions="r", data_type=data_type, count=1)

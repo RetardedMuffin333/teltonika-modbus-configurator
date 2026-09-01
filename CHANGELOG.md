@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-09-01
+
+Fifth release baseline, focused on reusable import profiles, broader register-table formats, atvise Connect Symbol import, and large-project GUI polish.
+
+### Added
+
+- Register-table import from `.xls`, `.xlsx`, and `.csv` through one normalized parsing pipeline.
+- Reusable `ImportProfile` abstraction for vendor-specific column aliases, name normalization, and address-offset defaults.
+- Built-in `Carel cDesign` profile with hardware-tested `Index + 1` default.
+- Built-in `Generic Modbus table` profile for common `Name/Register/Area/Data Type/Access/Count` style exports with no automatic address offset.
+- atvise Connect `.Symbol` import targeting an existing RTU or TCP client in the project.
+- Symbol import support for `IR`, `IRR`, `HR`, `HRR`, `DI`, `DA`, and hardware-verified `HRD`.
+- Hardware-verified `HRD` interpretation as FC03 Holding Register, signed 32-bit integer, byte order `1234`, request register count `2`.
+- Compact, datatype-aware TCP Server allocation for imported Symbol rows, including two-register widths for 32-bit values.
+- Auto-hiding vertical and horizontal scrollbars for all large main GUI tables.
+- Auto-hiding scrollbars in Symbol import and Register Table import previews.
+
+### Changed
+
+- Import workflows are grouped under a single `Import` menu.
+- Carel import is no longer tied to a single legacy XLS parser; the same profile works across XLS, XLSX and CSV.
+- Register-table profile selection is explicit before opening the source file.
+- Symbol import treats the Symbol file strictly as register/node metadata; connection settings continue to come from the selected existing project device.
+- Large main tables preserve the v0.4 usability features while adding scrollbars only when content exceeds the visible area.
+
+### Verified behavior
+
+v0.5 acceptance testing used real project data and a working Teltonika/Carel setup.
+
+Verified end-to-end behavior includes:
+
+- Carel cDesign register-table import through the profile-driven importer.
+- atvise Connect Symbol parsing of a real 597-symbol file with zero unrecognized register lines.
+- `HRD` scheduler variables such as Carel `DINT` values imported as 32-bit signed Holding Register requests using byte order `1234` and register count `2`.
+- All 597 entries in the tested Symbol file becoming importable after HRD verification.
+- Compact server-side repacking remaining compatible with atvise Connect block reads.
+- Main application, Symbol preview, and Register Table preview scrollbars tested interactively.
+
+### Deferred to v0.6+
+
+- Live Modbus register tester from the desktop GUI.
+- Direct one-shot reads from existing project requests.
+- Manual diagnostic writes from the tester.
+- Standalone Windows installer.
+- 64-bit RutOS request datatype generation until exact request tokens are verified.
+
 ## [0.4.0] - 2026-09-01
 
 Fourth release baseline, focused on Carel cDesign import, large-project usability, and hardware-verified SCADA write workflows for coils, 16-bit holding registers, and FLOAT32 values.

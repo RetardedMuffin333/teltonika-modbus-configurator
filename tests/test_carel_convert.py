@@ -107,9 +107,28 @@ def test_selected_mixed_areas_pack_independently_and_preserve_32bit_width():
     assert [item.mapping.register for item in packed if item.mapping.register_type == "holding_register"] == [1200, 1202]
 
 
+def test_generic_aliases_map_standard_area_and_datatype_names_without_offset():
+    project = _project()
+    rows = [
+        CarelImportRow("CSV", 2, "Temperature", "100", "HR", "2", "float32", "R"),
+        CarelImportRow("CSV", 3, "SchedulerDay", "102", "holding registers", "2", "int32", "RW"),
+        CarelImportRow("CSV", 4, "Alarm", "7", "DI", "1", "boolean", "R"),
+    ]
+    plan = build_carel_import_plan(project, rows, tcp_device_name="Carel", add_one_to_index=False, mapping_start=1400)
+    assert plan[0].request.register == 100
+    assert plan[0].request.data_type == "float32"
+    assert plan[0].mapping.register == 1400
+    assert plan[1].request.register == 102
+    assert plan[1].request.data_type == "int32"
+    assert plan[1].request.byte_order == "1234"
+    assert plan[1].mapping.register == 1402
+    assert plan[2].request.function == FunctionCode.READ_DISCRETE_INPUTS
+    assert plan[2].request.data_type == "bool"
+
+
 def test_unsupported_datatype_is_skipped_not_guessed():
     project = _project()
     rows = [CarelImportRow("Documentation", 2, "X", "10", "HoldingRegister", "4", "LReal", "Read")]
     plan = build_carel_import_plan(project, rows, tcp_device_name="Carel")
     assert plan[0].request is None
-    assert "unsupported Carel datatype" in plan[0].status
+    assert "unsupported datatype" in plan[0].status
