@@ -17,7 +17,7 @@ class ImportProfileDialog(simpledialog.Dialog):
     """Small profile chooser shown before opening a register-table file."""
 
     def __init__(self, parent):
-        self.profile_key = CAREL_CDESIGN.key
+        self.profile_key: str | None = None
         self.profile_var = tk.StringVar(value=CAREL_CDESIGN.label)
         self._labels = {profile.label: key for key, profile in BUILTIN_IMPORT_PROFILES.items()}
         super().__init__(parent, "Register table import")
