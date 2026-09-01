@@ -9,6 +9,7 @@ from .carel_import import load_carel_file
 from .gui_carel import CarelPreviewWindow
 from .gui_symbol import SymbolPreviewWindow
 from .gui_usability import UsableCarelProjectEditor
+from .gui_widgets import attach_overlay_scrollbars
 from .symbol_import import load_symbol_file
 
 
@@ -21,6 +22,24 @@ class V05ProjectEditor(UsableCarelProjectEditor):
         symbol_menu = tk.Menu(menu, tearoff=False)
         symbol_menu.add_command(label="atvise Connect Symbol file...", command=self.preview_symbol_file)
         menu.add_cascade(label="Symbols", menu=symbol_menu)
+
+    def _build_connections_tab(self):
+        super()._build_connections_tab()
+        attach_overlay_scrollbars(self.connections_tree)
+
+    def _build_devices_tab(self):
+        super()._build_devices_tab()
+        attach_overlay_scrollbars(self.devices_tree)
+        attach_overlay_scrollbars(self.requests_tree)
+
+    def _build_tcp_clients_tab(self):
+        super()._build_tcp_clients_tab()
+        attach_overlay_scrollbars(self.tcp_clients_tree)
+        attach_overlay_scrollbars(self.tcp_client_requests_tree)
+
+    def _build_mappings_tab(self):
+        super()._build_mappings_tab()
+        attach_overlay_scrollbars(self.mappings_tree)
 
     def preview_carel_xls(self):
         """Open any supported Carel tabular export through one normalized loader."""
