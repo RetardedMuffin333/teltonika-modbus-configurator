@@ -22,7 +22,7 @@ dev = [
 
 [project.scripts]
 tmc = "teltonika_modbus_configurator.cli:main"
-tmc-gui = "teltonika_modbus_configurator.gui_v05:main"
+tmc-gui = "teltonika_modbus_configurator.gui_v06:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
