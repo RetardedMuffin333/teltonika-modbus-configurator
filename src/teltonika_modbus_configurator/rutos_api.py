@@ -25,12 +25,7 @@ class RutOSApiClient:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     def login(self) -> None:
-        response = requests.post(
-            f"{self.base_url}/login",
-            json={"username": self.username, "password": self.password},
-            timeout=self.timeout,
-            verify=self.verify_tls,
-        )
+        response = requests.post(f"{self.base_url}/login", json={"username": self.username, "password": self.password}, timeout=self.timeout, verify=self.verify_tls)
         response.raise_for_status()
         payload = response.json()
         token = payload.get("data", {}).get("token")
@@ -44,16 +39,9 @@ class RutOSApiClient:
         return {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
 
     def post(self, endpoint: str, data: dict[str, Any]) -> dict[str, Any]:
-        response = requests.post(
-            f"{self.base_url}/{endpoint.lstrip('/')}",
-            headers=self._headers(),
-            json={"data": data},
-            timeout=self.timeout,
-            verify=self.verify_tls,
-        )
+        response = requests.post(f"{self.base_url}/{endpoint.lstrip('/')}", headers=self._headers(), json={"data": data}, timeout=self.timeout, verify=self.verify_tls)
         if not response.ok:
-            details = _http_error_details(response)
-            raise RuntimeError(f"RutOS API HTTP {response.status_code}: {details}")
+            raise RuntimeError(f"RutOS API HTTP {response.status_code}: {_http_error_details(response)}")
         payload = response.json()
         if payload.get("success") is False:
             raise RuntimeError(_api_error(payload, "RutOS API request failed"))
@@ -62,75 +50,58 @@ class RutOSApiClient:
     @staticmethod
     def _request_payload(target: LiveTestTarget) -> dict[str, str]:
         request = target.request
-        return {
-            "server_id": str(target.device_id),
-            "timeout": str(target.timeout or 5),
-            "function": str(int(request.function)),
-            "first_reg": str(request.register),
-            "reg_count": str(request.count),
-            "data_type": _request_data_type(request),
-            "no_brackets": "0",
-        }
+        return {"server_id": str(target.device_id), "timeout": str(target.timeout or 5), "function": str(int(request.function)), "first_reg": str(request.register), "reg_count": str(request.count), "data_type": _request_data_type(request), "no_brackets": "0"}
 
     def test_tcp(self, target: LiveTestTarget):
         if target.transport != "tcp":
             raise ValueError("TCP live transport can only test TCP targets")
         data = self._request_payload(target)
-        data.update({
-            "dev_ipaddr": str(target.host),
-            "port": str(target.port or 502),
-            "delay": "0",
-        })
-        endpoint_id = str(target.config_id or 1)
-        return self.post(f"modbus/client/tcp/{endpoint_id}/requests/actions/test_request", data)
+        data.update({"dev_ipaddr": str(target.host), "port": str(target.port or 502), "delay": "0"})
+        return self.post(f"modbus/client/tcp/{target.config_id or 1}/requests/actions/test_request", data)
 
     def test_serial(self, target: LiveTestTarget):
         if target.transport != "rtu":
             raise ValueError("Serial live transport can only test RTU targets")
         if target.config_id is None:
-            raise RuntimeError(
-                "This RTU target has no RutOS server configuration ID. Import the live gateway configuration first, then retry."
-            )
+            raise RuntimeError("This RTU target has no RutOS server configuration ID. Import the live gateway configuration first, then retry.")
+        missing = [name for name, value in (("baudrate", target.baudrate), ("databits", target.databits), ("parity", target.parity), ("stopbits", target.stopbits)) if value is None]
+        if missing:
+            raise RuntimeError(f"Missing serial connection settings for live RTU test: {', '.join(missing)}")
         data = self._request_payload(target)
-        # RutOS serial request configurations include broadcast explicitly. Some
-        # firmware revisions validate this field for test_request even for reads.
-        data["broadcast"] = "0"
-        endpoint_id = str(target.config_id)
-        return self.post(
-            f"modbus/client/serial/servers/{endpoint_id}/requests/actions/test_request",
-            data,
-        )
+        # RutOS validates the complete serial-line configuration for this action;
+        # the hardware response showed these fields are mandatory even though the
+        # server itself already references an RTU device section.
+        data.update({
+            "type": target.serial_type or "rs485",
+            "flowcontrol": target.flowcontrol or "none",
+            "parity": str(target.parity),
+            "databits": str(target.databits),
+            "stopbits": str(target.stopbits),
+            "baudrate": str(target.baudrate),
+            "broadcast": "0",
+        })
+        return self.post(f"modbus/client/serial/servers/{target.config_id}/requests/actions/test_request", data)
 
 
 def execute_live_test(client: RutOSApiClient, target: LiveTestTarget):
     def call():
-        if target.transport == "tcp":
-            payload = client.test_tcp(target)
-        elif target.transport == "rtu":
-            payload = client.test_serial(target)
-        else:
-            raise ValueError(f"Unsupported live Modbus transport: {target.transport}")
+        payload = client.test_tcp(target) if target.transport == "tcp" else client.test_serial(target) if target.transport == "rtu" else (_ for _ in ()).throw(ValueError(f"Unsupported live Modbus transport: {target.transport}"))
         raw = json.dumps(payload, indent=2, ensure_ascii=False)
         return _extract_value(payload), raw
-
     return run_timed_test(call)
 
 
 def execute_tcp_test(client: RutOSApiClient, target: LiveTestTarget):
-    """Compatibility wrapper kept for the first v0.6 TCP slice."""
     return execute_live_test(client, target)
 
 
 def _extract_value(payload: Any) -> str:
-    """Return the human-readable value from RutOS test_request responses."""
     data = payload.get("data") if isinstance(payload, dict) else payload
     if isinstance(data, dict):
         for key in ("value", "result", "response", "data"):
             if key in data:
                 return _display_value(data[key])
-    if data is None:
-        return ""
-    return _display_value(data)
+    return "" if data is None else _display_value(data)
 
 
 def _display_value(value: Any) -> str:
@@ -145,7 +116,6 @@ def _display_value(value: Any) -> str:
 
 
 def _http_error_details(response) -> str:
-    """Expose RutOS validation details instead of hiding useful 4xx JSON."""
     try:
         payload = response.json()
     except Exception:
@@ -161,6 +131,4 @@ def _http_error_details(response) -> str:
 
 def _api_error(payload: dict[str, Any], fallback: str) -> str:
     errors = payload.get("errors") or payload.get("error")
-    if errors:
-        return f"{fallback}: {errors}"
-    return fallback
+    return f"{fallback}: {errors}" if errors else fallback
