@@ -38,16 +38,17 @@ class SymbolPlannedItem:
     status: str
 
 
-# Verified from the existing atvise symbol exporter used by this project.
-# HRD is deliberately not guessed yet: real files contain it, but its exact
-# datatype semantics still need verification before we generate RutOS requests.
+# Verified against real atvise Connect symbols and live/working RutOS requests.
+# Tuple: function, TCP register type, normalized data type, byte order, RutOS reg_count.
+# HRD is Carel/atvise DINT: FC03, signed 32-bit 1234, and requires reg_count=2.
 _SYMBOL_MAP = {
-    "IR": (FunctionCode.READ_INPUT_REGISTERS, "input_register", "int16", "high_byte_first"),
-    "IRR": (FunctionCode.READ_INPUT_REGISTERS, "input_register", "float32", "1234"),
-    "HR": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register", "int16", "high_byte_first"),
-    "HRR": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register", "float32", "1234"),
-    "DI": (FunctionCode.READ_DISCRETE_INPUTS, "discrete_input", "bool", "none"),
-    "DA": (FunctionCode.READ_COILS, "coil", "bool", "none"),
+    "IR": (FunctionCode.READ_INPUT_REGISTERS, "input_register", "int16", "high_byte_first", 1),
+    "IRR": (FunctionCode.READ_INPUT_REGISTERS, "input_register", "float32", "1234", 1),
+    "HR": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register", "int16", "high_byte_first", 1),
+    "HRR": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register", "float32", "1234", 1),
+    "HRD": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register", "int32", "1234", 2),
+    "DI": (FunctionCode.READ_DISCRETE_INPUTS, "discrete_input", "bool", "none", 1),
+    "DA": (FunctionCode.READ_COILS, "coil", "bool", "none", 1),
 }
 
 _SYMBOL_RE = re.compile(r"^\s*sym-(?P<name>.+?)\s*=\s*(?P<type>[A-Za-z]+)\s*(?P<register>\d+)\s*,?\s*$")
@@ -118,12 +119,12 @@ def build_symbol_import_plan(
             result.append(SymbolPlannedItem(row, None, None, f"Skip: duplicate mapping name {row.name}"))
             continue
 
-        function, register_type, data_type, byte_order = spec
+        function, register_type, data_type, byte_order, request_count = spec
         request = Request(
             name=row.name,
             function=function,
             register=row.register + source_address_offset,
-            count=1,
+            count=request_count,
             data_type=data_type,
             byte_order=byte_order,
             enabled=True,
