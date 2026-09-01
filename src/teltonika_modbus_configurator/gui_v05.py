@@ -9,6 +9,7 @@ from .carel_import import load_carel_file
 from .gui_carel import CarelPreviewWindow
 from .gui_symbol import SymbolPreviewWindow
 from .gui_usability import UsableCarelProjectEditor
+from .gui_widgets import attach_overlay_scrollbars
 from .import_profiles import BUILTIN_IMPORT_PROFILES, CAREL_CDESIGN, get_import_profile
 from .symbol_import import load_symbol_file
 
@@ -24,20 +25,9 @@ class ImportProfileDialog(simpledialog.Dialog):
 
     def body(self, master):
         ttk.Label(master, text="Import profile:").grid(row=0, column=0, padx=8, pady=8, sticky="w")
-        combo = ttk.Combobox(
-            master,
-            textvariable=self.profile_var,
-            values=list(self._labels),
-            state="readonly",
-            width=30,
-        )
+        combo = ttk.Combobox(master, textvariable=self.profile_var, values=list(self._labels), state="readonly", width=30)
         combo.grid(row=0, column=1, padx=8, pady=8, sticky="ew")
-        ttk.Label(
-            master,
-            text="Carel cDesign uses the hardware-tested Index +1 default. Generic Modbus tables keep addresses unchanged.",
-            wraplength=430,
-            justify="left",
-        ).grid(row=1, column=0, columnspan=2, padx=8, pady=(0, 8), sticky="w")
+        ttk.Label(master, text="Carel cDesign uses the hardware-tested Index +1 default. Generic Modbus tables keep addresses unchanged.", wraplength=430, justify="left").grid(row=1, column=0, columnspan=2, padx=8, pady=(0, 8), sticky="w")
         master.columnconfigure(1, weight=1)
         return combo
 
@@ -64,17 +54,31 @@ class V05ProjectEditor(UsableCarelProjectEditor):
     def _build_menu(self):
         super()._build_menu()
         menu = self.nametowidget(self.cget("menu"))
-
-        # v0.4 exposed Carel as its own menu. v0.5 groups all inbound data
-        # sources under one Import menu while preserving the same workflows.
         self._delete_menu_label(menu, "Carel")
         import_menu = tk.Menu(menu, tearoff=False)
         import_menu.add_command(label="Register table (XLS/XLSX/CSV)...", command=self.preview_register_table)
         import_menu.add_command(label="atvise Connect Symbol file...", command=self.preview_symbol_file)
         menu.add_cascade(label="Import", menu=import_menu)
 
+    def _build_connections_tab(self):
+        super()._build_connections_tab()
+        attach_overlay_scrollbars(self.connections_tree)
+
+    def _build_devices_tab(self):
+        super()._build_devices_tab()
+        attach_overlay_scrollbars(self.devices_tree)
+        attach_overlay_scrollbars(self.requests_tree)
+
+    def _build_tcp_clients_tab(self):
+        super()._build_tcp_clients_tab()
+        attach_overlay_scrollbars(self.tcp_clients_tree)
+        attach_overlay_scrollbars(self.tcp_client_requests_tree)
+
+    def _build_mappings_tab(self):
+        super()._build_mappings_tab()
+        attach_overlay_scrollbars(self.mappings_tree)
+
     def preview_carel_xls(self):
-        """Backward-compatible menu callback: open the new profile workflow."""
         self.preview_register_table()
 
     def preview_register_table(self):
@@ -82,18 +86,7 @@ class V05ProjectEditor(UsableCarelProjectEditor):
         if not chooser.profile_key:
             return
         profile = get_import_profile(chooser.profile_key)
-
-        filename = filedialog.askopenfilename(
-            parent=self,
-            title=f"Open {profile.label} Modbus export",
-            filetypes=[
-                ("Register tables", "*.xls *.xlsx *.csv"),
-                ("Excel 97-2003", "*.xls"),
-                ("Excel workbook", "*.xlsx"),
-                ("CSV", "*.csv"),
-                ("All files", "*.*"),
-            ],
-        )
+        filename = filedialog.askopenfilename(parent=self, title=f"Open {profile.label} Modbus export", filetypes=[("Register tables", "*.xls *.xlsx *.csv"), ("Excel 97-2003", "*.xls"), ("Excel workbook", "*.xlsx"), ("CSV", "*.csv"), ("All files", "*.*")])
         if not filename:
             return
         try:
@@ -102,13 +95,8 @@ class V05ProjectEditor(UsableCarelProjectEditor):
             messagebox.showerror("Register table import", str(exc), parent=self)
             return
         if not preview.rows:
-            messagebox.showerror(
-                "Register table import",
-                f"No register rows were detected with the {profile.label} profile.",
-                parent=self,
-            )
+            messagebox.showerror("Register table import", f"No register rows were detected with the {profile.label} profile.", parent=self)
             return
-
         window = CarelPreviewWindow(self, preview)
         window.title(f"Register table import - {profile.label}")
         window.add_one_var.set(profile.default_add_one_to_index)
@@ -116,7 +104,6 @@ class V05ProjectEditor(UsableCarelProjectEditor):
 
     @staticmethod
     def _generalize_register_preview_labels(window) -> None:
-        """Replace remaining v0.4 Carel-specific wording without duplicating the preview UI."""
         stack = list(window.winfo_children())
         while stack:
             widget = stack.pop()
@@ -129,11 +116,7 @@ class V05ProjectEditor(UsableCarelProjectEditor):
                 widget.configure(text="Add +1 to source register for RutOS request address")
 
     def preview_symbol_file(self):
-        filename = filedialog.askopenfilename(
-            parent=self,
-            title="Open atvise Connect Symbol file",
-            filetypes=[("atvise Symbol files", "*.Symbol *.symbol"), ("All files", "*.*")],
-        )
+        filename = filedialog.askopenfilename(parent=self, title="Open atvise Connect Symbol file", filetypes=[("atvise Symbol files", "*.Symbol *.symbol"), ("All files", "*.*")])
         if not filename:
             return
         try:
