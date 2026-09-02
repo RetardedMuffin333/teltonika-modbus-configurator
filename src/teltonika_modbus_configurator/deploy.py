@@ -15,7 +15,6 @@ from .uci_generator import GeneratedUci
 
 
 DEFAULT_COMMAND_TIMEOUT = 45.0
-MODBUS_RESTART_TIMEOUT = 300.0
 ProgressCallback = Callable[[str], None]
 
 
@@ -78,9 +77,9 @@ class SshSession:
 
         channel = stdout.channel
         effective_timeout = self.command_timeout if timeout is None else timeout
-        deadline = monotonic() + effective_timeout
+        deadline = None if effective_timeout <= 0 else monotonic() + effective_timeout
         while not channel.exit_status_ready():
-            if monotonic() >= deadline:
+            if deadline is not None and monotonic() >= deadline:
                 channel.close()
                 raise TimeoutError(
                     f"Remote command timed out after {effective_timeout:.0f}s: {command}"
@@ -152,11 +151,11 @@ def _verify_committed_config(session: SshSession) -> None:
 
 
 def _restart_modbus_services(session: SshSession) -> None:
-    """Restart RutOS Modbus services with headroom for large server configs."""
+    """Restart RutOS Modbus services and let RutOS finish however long it needs."""
     session.run(
         "([ -x /etc/init.d/modbus_client ] && /etc/init.d/modbus_client restart || true); "
         "([ -x /etc/init.d/modbus_server ] && /etc/init.d/modbus_server restart || true)",
-        timeout=MODBUS_RESTART_TIMEOUT,
+        timeout=0,
     )
 
 
