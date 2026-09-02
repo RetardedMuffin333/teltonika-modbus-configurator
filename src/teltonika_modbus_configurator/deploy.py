@@ -6,10 +6,16 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from difflib import unified_diff
 from pathlib import Path
+from time import monotonic, sleep
+from typing import Callable
 
 import paramiko
 
 from .uci_generator import GeneratedUci
+
+
+DEFAULT_COMMAND_TIMEOUT = 45.0
+ProgressCallback = Callable[[str], None]
 
 
 @dataclass(slots=True)
@@ -28,7 +34,9 @@ class SshSession:
         password: str | None = None,
         key_filename: str | None = None,
         trust_new_host: bool = False,
+        command_timeout: float = DEFAULT_COMMAND_TIMEOUT,
     ) -> None:
+        self.command_timeout = command_timeout
         self.client = paramiko.SSHClient()
         self.client.load_system_host_keys()
         if trust_new_host:
@@ -55,12 +63,30 @@ class SshSession:
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
-    def run(self, command: str, *, stdin_text: str | None = None) -> str:
+    def run(
+        self,
+        command: str,
+        *,
+        stdin_text: str | None = None,
+        timeout: float | None = None,
+    ) -> str:
         stdin, stdout, stderr = self.client.exec_command(command)
         if stdin_text is not None:
             stdin.write(stdin_text)
             stdin.channel.shutdown_write()
-        status = stdout.channel.recv_exit_status()
+
+        channel = stdout.channel
+        deadline = monotonic() + (self.command_timeout if timeout is None else timeout)
+        while not channel.exit_status_ready():
+            if monotonic() >= deadline:
+                channel.close()
+                raise TimeoutError(
+                    f"Remote command timed out after "
+                    f"{self.command_timeout if timeout is None else timeout:.0f}s: {command}"
+                )
+            sleep(0.05)
+
+        status = channel.recv_exit_status()
         output = stdout.read().decode("utf-8", errors="replace")
         error = stderr.read().decode("utf-8", errors="replace")
         if status != 0:
@@ -68,6 +94,11 @@ class SshSession:
                 f"Remote command failed ({status}): {command}\n{error.strip()}"
             )
         return output
+
+
+def _progress(callback: ProgressCallback | None, message: str) -> None:
+    if callback is not None:
+        callback(message)
 
 
 def read_remote_config(session: SshSession) -> RemoteConfig:
@@ -111,8 +142,10 @@ def apply_generated(
     proposed: GeneratedUci,
     *,
     snapshot: str,
+    progress: ProgressCallback | None = None,
 ) -> None:
     remote_dir = f"/root/tmc-backups/{snapshot}"
+    _progress(progress, "Creating remote backup...")
     session.run(
         f"mkdir -p {remote_dir} && "
         f"cp /etc/config/modbus_client {remote_dir}/modbus_client && "
@@ -120,35 +153,54 @@ def apply_generated(
     )
 
     try:
+        _progress(progress, "Uploading Modbus Client configuration...")
         session.run("uci import modbus_client", stdin_text=proposed.modbus_client)
+        _progress(progress, "Uploading Modbus Server configuration...")
         session.run("uci import modbus_server", stdin_text=proposed.modbus_server)
 
-        # Parse/export before commit. If UCI cannot parse the generated package,
-        # nothing is committed and the staged changes are reverted below.
+        _progress(progress, "Validating generated UCI...")
         session.run("uci export modbus_client >/dev/null")
         session.run("uci export modbus_server >/dev/null")
 
+        _progress(progress, "Committing Modbus configuration...")
         session.run("uci commit modbus_client")
         session.run("uci commit modbus_server")
+
+        _progress(progress, "Restarting Modbus services...")
         session.run(
             "([ -x /etc/init.d/modbus_client ] && /etc/init.d/modbus_client restart || true); "
-            "([ -x /etc/init.d/modbus_server ] && /etc/init.d/modbus_server restart || true)"
+            "([ -x /etc/init.d/modbus_server ] && /etc/init.d/modbus_server restart || true)",
+            timeout=90.0,
         )
+
+        _progress(progress, "Verifying live configuration...")
+        session.run("uci export modbus_client >/dev/null")
+        session.run("uci export modbus_server >/dev/null")
+        _progress(progress, "Deployment complete.")
     except Exception:
         session.run("uci revert modbus_client || true")
         session.run("uci revert modbus_server || true")
         raise
 
 
-def rollback_snapshot(session: SshSession, snapshot: str) -> None:
+def rollback_snapshot(
+    session: SshSession,
+    snapshot: str,
+    *,
+    progress: ProgressCallback | None = None,
+) -> None:
     remote_dir = f"/root/tmc-backups/{snapshot}"
+    _progress(progress, "Restoring snapshot files...")
     session.run(
         f"test -f {remote_dir}/modbus_client && "
         f"test -f {remote_dir}/modbus_server && "
         f"cp {remote_dir}/modbus_client /etc/config/modbus_client && "
         f"cp {remote_dir}/modbus_server /etc/config/modbus_server"
     )
+    _progress(progress, "Restarting Modbus services...")
     session.run(
         "([ -x /etc/init.d/modbus_client ] && /etc/init.d/modbus_client restart || true); "
-        "([ -x /etc/init.d/modbus_server ] && /etc/init.d/modbus_server restart || true)"
+        "([ -x /etc/init.d/modbus_server ] && /etc/init.d/modbus_server restart || true)",
+        timeout=90.0,
     )
+    _progress(progress, "Rollback complete.")
