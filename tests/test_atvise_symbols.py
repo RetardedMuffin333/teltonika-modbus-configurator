@@ -29,6 +29,7 @@ def test_exports_verified_atvise_prefixes():
             _mapping("Pressure", 1200, "input_register", "float32"),
             _mapping("FloatCommand", 1202, "holding_register", "float32"),
             _mapping("SchedulerDay", 1204, "holding_register", "int32"),
+            _mapping("PulseCounter", 1206, "holding_register", "uint32"),
         ]
     )
 
@@ -41,6 +42,7 @@ def test_exports_verified_atvise_prefixes():
         "sym-Pressure=IRR1200,\n"
         "sym-FloatCommand=HRR1202,\n"
         "sym-SchedulerDay=HRD1204,\n"
+        "sym-PulseCounter=HRD1206,\n"
     )
 
 
@@ -65,7 +67,7 @@ def test_can_include_disabled_mapping_explicitly():
     ("register_type", "data_type"),
     [
         ("input_register", "int32"),
-        ("holding_register", "uint32"),
+        ("input_register", "uint32"),
         ("input_register", "float64"),
         ("holding_register", "float64"),
     ],
