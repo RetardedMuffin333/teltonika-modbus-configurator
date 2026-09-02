@@ -28,7 +28,7 @@ def test_exports_verified_atvise_prefixes():
             _mapping("Pump", 1101, "coil", "bool"),
             _mapping("Pressure", 1200, "input_register", "float32"),
             _mapping("FloatCommand", 1202, "holding_register", "float32"),
-            _mapping("DoubleCommand", 1204, "holding_register", "float64"),
+            _mapping("SchedulerDay", 1204, "holding_register", "int32"),
         ]
     )
 
@@ -40,7 +40,7 @@ def test_exports_verified_atvise_prefixes():
         "sym-Pump=DA1101,\n"
         "sym-Pressure=IRR1200,\n"
         "sym-FloatCommand=HRR1202,\n"
-        "sym-DoubleCommand=HRD1204,\n"
+        "sym-SchedulerDay=HRD1204,\n"
     )
 
 
@@ -67,6 +67,7 @@ def test_can_include_disabled_mapping_explicitly():
         ("input_register", "int32"),
         ("holding_register", "uint32"),
         ("input_register", "float64"),
+        ("holding_register", "float64"),
     ],
 )
 def test_rejects_unverified_atvise_encodings(register_type, data_type):
