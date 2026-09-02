@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from teltonika_modbus_configurator.deploy import (
+    MODBUS_RESTART_TIMEOUT,
     RemoteConfig,
     apply_generated,
     render_diff,
@@ -45,19 +46,19 @@ def test_save_local_backup(tmp_path: Path) -> None:
 
 
 class RecordingSession:
-    def __init__(self, *, timeout_restart=False) -> None:
+    def __init__(self, *, server_enabled="") -> None:
         self.calls = []
-        self.timeout_restart = timeout_restart
+        self.server_enabled = server_enabled
 
     def run(self, command, *, stdin_text=None, timeout=None):
         self.calls.append((command, stdin_text, timeout))
-        if self.timeout_restart and "modbus_client restart" in command:
-            raise TimeoutError("restart still running")
+        if command == "uci -q get modbus_server.modbus.enabled || true":
+            return self.server_enabled
         return ""
 
 
-def test_apply_generated_reports_stages_and_bounds_restart_wait() -> None:
-    session = RecordingSession()
+def test_apply_generated_reports_stages_and_allows_large_server_restart() -> None:
+    session = RecordingSession(server_enabled="1")
     proposed = GeneratedUci(
         modbus_client="package modbus_client\n",
         modbus_server="package modbus_server\n",
@@ -77,13 +78,17 @@ def test_apply_generated_reports_stages_and_bounds_restart_wait() -> None:
         "Uploading Modbus Server configuration...",
         "Validating generated UCI...",
         "Committing Modbus configuration...",
-        "Restarting Modbus services...",
-        "Verifying live configuration...",
+        "Restarting Modbus services (large configs can take several minutes)...",
+        "Verifying live Modbus server...",
         "Deployment complete.",
     ]
     restart_calls = [call for call in session.calls if "modbus_client restart" in call[0]]
     assert len(restart_calls) == 1
-    assert restart_calls[0][2] == 90.0
+    assert restart_calls[0][2] == MODBUS_RESTART_TIMEOUT == 300.0
+
+    runtime_checks = [call for call in session.calls if "modbus_server.modbus" in call[0] and "netstat" in call[0]]
+    assert len(runtime_checks) == 1
+    assert runtime_checks[0][2] == 15.0
 
 
 def test_apply_generated_sends_generated_packages_over_stdin() -> None:
@@ -101,19 +106,14 @@ def test_apply_generated_sends_generated_packages_over_stdin() -> None:
     assert server_import[1] == proposed.modbus_server
 
 
-def test_apply_restart_timeout_is_not_failure_when_committed_config_verifies() -> None:
-    session = RecordingSession(timeout_restart=True)
+def test_runtime_check_is_skipped_when_tcp_server_disabled() -> None:
+    session = RecordingSession(server_enabled="0")
     proposed = GeneratedUci(
         modbus_client="package modbus_client\n",
         modbus_server="package modbus_server\n",
     )
-    progress = []
 
-    apply_generated(session, proposed, snapshot="snapshot3", progress=progress.append)
+    apply_generated(session, proposed, snapshot="snapshot3")
 
-    assert "Restart is taking longer than expected; verifying committed configuration..." in progress
-    assert progress[-1] == "Deployment complete."
-    revert_calls = [call for call in session.calls if call[0].startswith("uci revert")]
-    assert revert_calls == []
-    verify_calls = [call for call in session.calls if call[0].startswith("uci export")]
-    assert len(verify_calls) >= 4
+    runtime_checks = [call for call in session.calls if "netstat" in call[0]]
+    assert runtime_checks == []
