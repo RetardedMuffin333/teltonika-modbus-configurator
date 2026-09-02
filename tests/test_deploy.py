@@ -45,11 +45,14 @@ def test_save_local_backup(tmp_path: Path) -> None:
 
 
 class RecordingSession:
-    def __init__(self) -> None:
+    def __init__(self, *, timeout_restart=False) -> None:
         self.calls = []
+        self.timeout_restart = timeout_restart
 
     def run(self, command, *, stdin_text=None, timeout=None):
         self.calls.append((command, stdin_text, timeout))
+        if self.timeout_restart and "modbus_client restart" in command:
+            raise TimeoutError("restart still running")
         return ""
 
 
@@ -96,3 +99,21 @@ def test_apply_generated_sends_generated_packages_over_stdin() -> None:
     server_import = next(call for call in session.calls if call[0] == "uci import modbus_server")
     assert client_import[1] == proposed.modbus_client
     assert server_import[1] == proposed.modbus_server
+
+
+def test_apply_restart_timeout_is_not_failure_when_committed_config_verifies() -> None:
+    session = RecordingSession(timeout_restart=True)
+    proposed = GeneratedUci(
+        modbus_client="package modbus_client\n",
+        modbus_server="package modbus_server\n",
+    )
+    progress = []
+
+    apply_generated(session, proposed, snapshot="snapshot3", progress=progress.append)
+
+    assert "Restart is taking longer than expected; verifying committed configuration..." in progress
+    assert progress[-1] == "Deployment complete."
+    revert_calls = [call for call in session.calls if call[0].startswith("uci revert")]
+    assert revert_calls == []
+    verify_calls = [call for call in session.calls if call[0].startswith("uci export")]
+    assert len(verify_calls) >= 4
