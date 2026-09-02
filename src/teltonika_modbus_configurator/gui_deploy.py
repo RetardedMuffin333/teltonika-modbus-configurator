@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from getpass import getuser
 from pathlib import Path
+from queue import Empty, Queue
+from threading import Thread
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
@@ -75,6 +76,10 @@ class DiffConfirmDialog(tk.Toplevel):
 
 
 class DeploymentEditor(ProjectEditor):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._deployment_busy = False
+
     def _build_menu(self):
         super()._build_menu()
         menu = self.nametowidget(self.cget("menu"))
@@ -124,6 +129,54 @@ class DeploymentEditor(ProjectEditor):
             messagebox.showerror("Generation failed", str(exc), parent=self)
             return None
 
+    def _start_background(self, worker, on_success, on_error, initial_status: str):
+        """Run blocking network work off the Tk thread and marshal results back safely."""
+        if self._deployment_busy:
+            messagebox.showinfo(
+                "Deployment busy",
+                "Another live deployment operation is still running.",
+                parent=self,
+            )
+            return False
+
+        self._deployment_busy = True
+        events: Queue = Queue()
+        self.status.set(initial_status)
+
+        def progress(message: str) -> None:
+            events.put(("progress", message))
+
+        def target() -> None:
+            try:
+                result = worker(progress)
+            except Exception as exc:
+                events.put(("error", exc))
+            else:
+                events.put(("success", result))
+
+        Thread(target=target, daemon=True).start()
+
+        def poll() -> None:
+            try:
+                while True:
+                    kind, payload = events.get_nowait()
+                    if kind == "progress":
+                        self.status.set(str(payload))
+                    elif kind == "success":
+                        self._deployment_busy = False
+                        on_success(payload)
+                        return
+                    elif kind == "error":
+                        self._deployment_busy = False
+                        on_error(payload)
+                        return
+            except Empty:
+                pass
+            self.after(100, poll)
+
+        self.after(100, poll)
+        return True
+
     def remote_preview(self):
         generated = self._validated_generated()
         if generated is None:
@@ -132,17 +185,16 @@ class DeploymentEditor(ProjectEditor):
         if details is None:
             return
         host, user, password, trust = details
-        try:
-            self.status.set(f"Reading live configuration from {host}...")
-            self.update_idletasks()
-            with SshSession(
-                host,
-                username=user,
-                password=password,
-                trust_new_host=trust,
-            ) as session:
+
+        def worker(progress):
+            progress(f"Connecting to {host}...")
+            with SshSession(host, username=user, password=password, trust_new_host=trust) as session:
+                progress(f"Reading live configuration from {host}...")
                 current = read_remote_config(session)
-            diff = render_diff(current, generated)
+            progress("Building live diff...")
+            return render_diff(current, generated)
+
+        def success(diff):
             if not diff:
                 messagebox.showinfo(
                     "Live diff", "Live configuration already matches this project.", parent=self
@@ -150,9 +202,12 @@ class DeploymentEditor(ProjectEditor):
             else:
                 TextWindow(self, f"Live diff - {host}", diff)
             self.status.set(f"Live preview complete for {host}")
-        except Exception as exc:
+
+        def failure(exc):
             self.status.set("Live preview failed")
             messagebox.showerror("Remote preview failed", str(exc), parent=self)
+
+        self._start_background(worker, success, failure, f"Connecting to {host}...")
 
     def remote_apply(self):
         generated = self._validated_generated()
@@ -163,56 +218,72 @@ class DeploymentEditor(ProjectEditor):
             return
         host, user, password, trust = details
 
-        try:
-            self.status.set(f"Reading live configuration from {host}...")
-            self.update_idletasks()
-            with SshSession(
-                host,
-                username=user,
-                password=password,
-                trust_new_host=trust,
-            ) as session:
+        def read_worker(progress):
+            progress(f"Connecting to {host}...")
+            with SshSession(host, username=user, password=password, trust_new_host=trust) as session:
+                progress(f"Reading live configuration from {host}...")
                 current = read_remote_config(session)
-                diff = render_diff(current, generated)
-                if not diff:
-                    messagebox.showinfo(
-                        "Nothing to apply",
-                        "Live configuration already matches this project.",
-                        parent=self,
-                    )
-                    self.status.set("Nothing to apply")
-                    return
+            progress("Building live diff...")
+            return current, render_diff(current, generated)
 
-                confirm = DiffConfirmDialog(self, diff)
-                if not confirm.result:
-                    self.status.set("Apply cancelled")
-                    return
-
-                snapshot = new_snapshot_name()
-                local_backup = save_local_backup(
-                    current, Path("backups"), snapshot
+        def read_success(result):
+            current, diff = result
+            if not diff:
+                messagebox.showinfo(
+                    "Nothing to apply",
+                    "Live configuration already matches this project.",
+                    parent=self,
                 )
-                self.status.set(f"Applying to {host}; backup {snapshot} created...")
-                self.update_idletasks()
-                apply_generated(session, generated, snapshot=snapshot)
+                self.status.set("Nothing to apply")
+                return
 
-            messagebox.showinfo(
-                "Apply complete",
-                f"Configuration applied successfully.\n\n"
-                f"Local backup: {local_backup}\n"
-                f"Remote snapshot: {snapshot}\n\n"
-                f"Keep the snapshot name for rollback.",
-                parent=self,
+            confirm = DiffConfirmDialog(self, diff)
+            if not confirm.result:
+                self.status.set("Apply cancelled")
+                return
+
+            snapshot = new_snapshot_name()
+
+            def apply_worker(progress):
+                progress(f"Creating local backup {snapshot}...")
+                local_backup = save_local_backup(current, Path("backups"), snapshot)
+                progress(f"Connecting to {host} for deployment...")
+                with SshSession(host, username=user, password=password, trust_new_host=trust) as session:
+                    apply_generated(session, generated, snapshot=snapshot, progress=progress)
+                return local_backup
+
+            def apply_success(local_backup):
+                messagebox.showinfo(
+                    "Apply complete",
+                    f"Configuration applied successfully.\n\n"
+                    f"Local backup: {local_backup}\n"
+                    f"Remote snapshot: {snapshot}\n\n"
+                    f"Keep the snapshot name for rollback.",
+                    parent=self,
+                )
+                self.status.set(f"Apply complete - snapshot {snapshot}")
+
+            def apply_failure(exc):
+                self.status.set("Apply failed")
+                messagebox.showerror(
+                    "Apply failed",
+                    f"The deployment did not complete.\n\n{exc}\n\n"
+                    "If a remote snapshot was created, use Rollback snapshot after checking the device.",
+                    parent=self,
+                )
+
+            self._start_background(
+                apply_worker,
+                apply_success,
+                apply_failure,
+                f"Preparing deployment to {host}...",
             )
-            self.status.set(f"Apply complete - snapshot {snapshot}")
-        except Exception as exc:
-            self.status.set("Apply failed")
-            messagebox.showerror(
-                "Apply failed",
-                f"The deployment did not complete.\n\n{exc}\n\n"
-                "If a remote snapshot was created, use Rollback snapshot after checking the device.",
-                parent=self,
-            )
+
+        def read_failure(exc):
+            self.status.set("Apply failed before write")
+            messagebox.showerror("Apply failed", str(exc), parent=self)
+
+        self._start_background(read_worker, read_success, read_failure, f"Connecting to {host}...")
 
     def remote_rollback(self):
         details = self._ssh_details()
@@ -233,25 +304,25 @@ class DeploymentEditor(ProjectEditor):
             parent=self,
         ):
             return
-        try:
-            self.status.set(f"Rolling back {host} to {snapshot}...")
-            self.update_idletasks()
-            with SshSession(
-                host,
-                username=user,
-                password=password,
-                trust_new_host=trust,
-            ) as session:
-                rollback_snapshot(session, snapshot)
+
+        def worker(progress):
+            progress(f"Connecting to {host}...")
+            with SshSession(host, username=user, password=password, trust_new_host=trust) as session:
+                rollback_snapshot(session, snapshot, progress=progress)
+
+        def success(_result):
             self.status.set(f"Rollback complete - {snapshot}")
             messagebox.showinfo(
                 "Rollback complete",
                 f"Restored remote snapshot {snapshot} on {host}.",
                 parent=self,
             )
-        except Exception as exc:
+
+        def failure(exc):
             self.status.set("Rollback failed")
             messagebox.showerror("Rollback failed", str(exc), parent=self)
+
+        self._start_background(worker, success, failure, f"Connecting to {host}...")
 
 
 def main() -> None:
