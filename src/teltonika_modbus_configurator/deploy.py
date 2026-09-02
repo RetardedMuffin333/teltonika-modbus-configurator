@@ -15,6 +15,7 @@ from .uci_generator import GeneratedUci
 
 
 DEFAULT_COMMAND_TIMEOUT = 45.0
+MODBUS_RESTART_TIMEOUT = 300.0
 ProgressCallback = Callable[[str], None]
 
 
@@ -138,9 +139,25 @@ def new_snapshot_name() -> str:
 
 
 def _verify_committed_config(session: SshSession) -> None:
-    """Verify that both committed RutOS UCI packages remain readable."""
+    """Verify committed UCI and, when enabled, the live TCP server runtime."""
     session.run("uci export modbus_client >/dev/null")
     session.run("uci export modbus_server >/dev/null")
+    enabled = session.run("uci -q get modbus_server.modbus.enabled || true").strip()
+    if enabled == "1":
+        session.run(
+            "ubus list | grep -qx 'modbus_server.modbus' && "
+            "netstat -lnt 2>/dev/null | grep -q ':502[[:space:]]'",
+            timeout=15.0,
+        )
+
+
+def _restart_modbus_services(session: SshSession) -> None:
+    """Restart RutOS Modbus services with headroom for large server configs."""
+    session.run(
+        "([ -x /etc/init.d/modbus_client ] && /etc/init.d/modbus_client restart || true); "
+        "([ -x /etc/init.d/modbus_server ] && /etc/init.d/modbus_server restart || true)",
+        timeout=MODBUS_RESTART_TIMEOUT,
+    )
 
 
 def apply_generated(
@@ -174,24 +191,10 @@ def apply_generated(
         session.run("uci commit modbus_server")
         committed = True
 
-        _progress(progress, "Restarting Modbus services...")
-        try:
-            session.run(
-                "([ -x /etc/init.d/modbus_client ] && /etc/init.d/modbus_client restart || true); "
-                "([ -x /etc/init.d/modbus_server ] && /etc/init.d/modbus_server restart || true)",
-                timeout=90.0,
-            )
-        except TimeoutError:
-            # Some RutOS builds apply/restart successfully but their init script
-            # does not return promptly. The configuration is already committed,
-            # so determine success from a fresh UCI verification instead of
-            # falsely reporting the whole deployment as failed.
-            _progress(
-                progress,
-                "Restart is taking longer than expected; verifying committed configuration...",
-            )
+        _progress(progress, "Restarting Modbus services (large configs can take several minutes)...")
+        _restart_modbus_services(session)
 
-        _progress(progress, "Verifying live configuration...")
+        _progress(progress, "Verifying live Modbus server...")
         _verify_committed_config(session)
         _progress(progress, "Deployment complete.")
     except Exception:
@@ -215,17 +218,8 @@ def rollback_snapshot(
         f"cp {remote_dir}/modbus_client /etc/config/modbus_client && "
         f"cp {remote_dir}/modbus_server /etc/config/modbus_server"
     )
-    _progress(progress, "Restarting Modbus services...")
-    try:
-        session.run(
-            "([ -x /etc/init.d/modbus_client ] && /etc/init.d/modbus_client restart || true); "
-            "([ -x /etc/init.d/modbus_server ] && /etc/init.d/modbus_server restart || true)",
-            timeout=90.0,
-        )
-    except TimeoutError:
-        _progress(
-            progress,
-            "Restart is taking longer than expected; verifying restored configuration...",
-        )
+    _progress(progress, "Restarting Modbus services (large configs can take several minutes)...")
+    _restart_modbus_services(session)
+    _progress(progress, "Verifying restored Modbus server...")
     _verify_committed_config(session)
     _progress(progress, "Rollback complete.")
