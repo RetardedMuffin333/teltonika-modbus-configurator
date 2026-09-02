@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from teltonika_modbus_configurator.deploy import (
-    MODBUS_RESTART_TIMEOUT,
     RemoteConfig,
     apply_generated,
     render_diff,
@@ -57,7 +56,7 @@ class RecordingSession:
         return ""
 
 
-def test_apply_generated_reports_stages_and_allows_large_server_restart() -> None:
+def test_apply_generated_reports_stages_and_does_not_time_limit_large_server_restart() -> None:
     session = RecordingSession(server_enabled="1")
     proposed = GeneratedUci(
         modbus_client="package modbus_client\n",
@@ -84,7 +83,7 @@ def test_apply_generated_reports_stages_and_allows_large_server_restart() -> Non
     ]
     restart_calls = [call for call in session.calls if "modbus_client restart" in call[0]]
     assert len(restart_calls) == 1
-    assert restart_calls[0][2] == MODBUS_RESTART_TIMEOUT == 300.0
+    assert restart_calls[0][2] == 0
 
     runtime_checks = [call for call in session.calls if "modbus_server.modbus" in call[0] and "netstat" in call[0]]
     assert len(runtime_checks) == 1
