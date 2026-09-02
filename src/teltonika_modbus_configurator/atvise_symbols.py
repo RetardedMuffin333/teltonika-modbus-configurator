@@ -8,11 +8,11 @@ Known/verified symbol prefixes:
 - ``DA``  - Coil / digital output
 - ``IRR`` - FLOAT32 Input Register
 - ``HRR`` - FLOAT32 Holding Register
-- ``HRD`` - FLOAT64 Holding Register
+- ``HRD`` - signed INT32 Holding Register
 
 Unknown atvise encodings are rejected instead of guessed. This is important for
-32/64-bit integer values and FLOAT64 Input Registers, whose Connect prefixes have
-not yet been verified against a known-good symbol file.
+unverified 32/64-bit values and FLOAT64 registers, whose Connect prefixes have
+not yet been confirmed against a known-good symbol file.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ def _prefix_for_mapping(mapping: ServerMapping) -> str:
             return "HR"
         if data_type == "float32":
             return "HRR"
-        if data_type == "float64":
+        if data_type == "int32":
             return "HRD"
         raise AtviseSymbolExportError(
             f"TCP mapping {mapping.name!r} uses holding_register/{data_type}; "
