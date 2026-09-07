@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
+from time import monotonic
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
@@ -20,6 +21,18 @@ from .deploy import (
 from .gui import ProjectEditor, TextWindow
 from .uci_generator import generate_uci
 from .validator import validate_project
+
+
+def format_elapsed_time(seconds: float) -> str:
+    """Format an elapsed duration for a compact deployment summary."""
+    total = max(0, int(round(seconds)))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours} h {minutes} min {secs} s"
+    if minutes:
+        return f"{minutes} min {secs} s"
+    return f"{secs} s"
 
 
 class DiffConfirmDialog(tk.Toplevel):
@@ -245,23 +258,27 @@ class DeploymentEditor(ProjectEditor):
             snapshot = new_snapshot_name()
 
             def apply_worker(progress):
+                started = monotonic()
                 progress(f"Creating local backup {snapshot}...")
                 local_backup = save_local_backup(current, Path("backups"), snapshot)
                 progress(f"Connecting to {host} for deployment...")
                 with SshSession(host, username=user, password=password, trust_new_host=trust) as session:
                     apply_generated(session, generated, snapshot=snapshot, progress=progress)
-                return local_backup
+                return local_backup, monotonic() - started
 
-            def apply_success(local_backup):
+            def apply_success(result):
+                local_backup, elapsed = result
+                elapsed_text = format_elapsed_time(elapsed)
                 messagebox.showinfo(
                     "Apply complete",
                     f"Configuration applied successfully.\n\n"
+                    f"Total apply time: {elapsed_text}\n\n"
                     f"Local backup: {local_backup}\n"
                     f"Remote snapshot: {snapshot}\n\n"
                     f"Keep the snapshot name for rollback.",
                     parent=self,
                 )
-                self.status.set(f"Apply complete - snapshot {snapshot}")
+                self.status.set(f"Apply complete in {elapsed_text} - snapshot {snapshot}")
 
             def apply_failure(exc):
                 self.status.set("Apply failed")
