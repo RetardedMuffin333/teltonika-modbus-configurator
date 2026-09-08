@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tkinter as tk
 from tkinter import messagebox
 
 from . import gui_bulk
@@ -11,14 +10,6 @@ from .scada_write import allocate_scada_template_mapping_layout, create_scada_wr
 
 
 class ScadaProjectEditor(FlowProjectEditor):
-    def _build_menu(self):
-        super()._build_menu()
-        menu = self.nametowidget(self.cget("menu"))
-        scada_menu = tk.Menu(menu, tearoff=False)
-        scada_menu.add_command(label="Create write target from selected RTU request", command=self.create_rtu_scada_write_target)
-        scada_menu.add_command(label="Create write target from selected TCP request", command=self.create_tcp_scada_write_target)
-        menu.add_cascade(label="SCADA", menu=scada_menu)
-
     def open_bulk_generator(self):
         gui_bulk.allocate_template_mapping_layout = allocate_scada_template_mapping_layout
         super().open_bulk_generator()
