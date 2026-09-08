@@ -87,4 +87,70 @@ def test_write_request_creates_write_only_holding_mapping() -> None:
     assert mapping.register_type == "holding_register"
     assert mapping.permissions == "w"
     assert mapping.data_type == "uint16"
-    assert mapping.register == 1025
+    assert mapping.register == 20000
+
+
+def test_mixed_read_and_write_requests_use_separate_mapping_blocks() -> None:
+    device = Device(
+        name="RDF",
+        slave_id=1,
+        connection="RS485",
+        requests=[
+            Request("CMD_Oper_Mode", FunctionCode.READ_HOLDING_REGISTERS, 101, data_type="int16"),
+            Request(
+                "CMD_Oper_Mode_w",
+                FunctionCode.WRITE_SINGLE_HOLDING_REGISTER,
+                101,
+                data_type="int16",
+                values="0",
+                enabled=False,
+            ),
+        ],
+    )
+    project = Project(devices=[device])
+
+    result = create_tcp_mappings_from_requests(
+        project,
+        device_name="RDF",
+        request_names=["CMD_Oper_Mode", "CMD_Oper_Mode_w"],
+    )
+
+    by_request = {mapping.request: mapping for mapping in result.created}
+    assert by_request["CMD_Oper_Mode"].register == 1025
+    assert by_request["CMD_Oper_Mode"].permissions == "r"
+    assert by_request["CMD_Oper_Mode_w"].register == 20000
+    assert by_request["CMD_Oper_Mode_w"].permissions == "w"
+
+
+def test_coil_read_and_write_requests_use_separate_mapping_blocks() -> None:
+    device = Device(
+        name="Carel",
+        slave_id=1,
+        connection="RS485",
+        requests=[
+            Request("Enable", FunctionCode.READ_COILS, 10, data_type="bool"),
+            Request(
+                "Enable_w",
+                FunctionCode.WRITE_SINGLE_COIL,
+                10,
+                data_type="bool",
+                values="0",
+                enabled=False,
+            ),
+        ],
+    )
+    project = Project(devices=[device])
+
+    result = create_tcp_mappings_from_requests(
+        project,
+        device_name="Carel",
+        request_names=["Enable", "Enable_w"],
+    )
+
+    by_request = {mapping.request: mapping for mapping in result.created}
+    assert by_request["Enable"].register_type == "coil"
+    assert by_request["Enable"].register == 1025
+    assert by_request["Enable"].permissions == "r"
+    assert by_request["Enable_w"].register_type == "coil"
+    assert by_request["Enable_w"].register == 20000
+    assert by_request["Enable_w"].permissions == "w"
