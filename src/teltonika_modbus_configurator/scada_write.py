@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .models import FunctionCode, Project, Request, ServerMapping
-from .register_allocator import first_free_register_range, mapping_width
+from .register_allocator import first_free_register_range, mapping_width, register_value_width
 
 
 SCADA_WRITE_HOLDING_START = 1200
@@ -52,6 +52,45 @@ def allocate_scada_template_mapping_layout(project: Project, mappings: list[Serv
     return result
 
 
+def _feedback_mapping_for_request(
+    project: Project,
+    *,
+    device_name: str,
+    request: Request,
+    register_type: str,
+) -> ServerMapping:
+    """Return the one enabled feedback mapping, creating it when none exists."""
+    feedback = [m for m in project.mappings if m.device == device_name and m.request == request.name and m.enabled]
+    if len(feedback) > 1:
+        raise ValueError("Feedback request has more than one enabled TCP Server mapping; keep exactly one before creating a write target.")
+    if feedback:
+        mapping = feedback[0]
+        if mapping.register_type != register_type:
+            raise ValueError(f"Feedback must be mapped to TCP {register_type}.")
+        return mapping
+
+    width = register_value_width(request.data_type, register_type) * max(1, request.count)
+    tcp_register = first_free_register_range(
+        project,
+        register_type=register_type,
+        width=width,
+        default=1025,
+    )
+    mapping = ServerMapping(
+        name=request.name,
+        device=device_name,
+        request=request.name,
+        register=tcp_register,
+        register_type=register_type,
+        enabled=True,
+        permissions="r",
+        data_type=request.data_type,
+        count=request.count,
+    )
+    project.mappings.append(mapping)
+    return mapping
+
+
 def create_scada_write_target(
     project: Project,
     *,
@@ -59,9 +98,10 @@ def create_scada_write_target(
     read_request_name: str,
     write_block_start: int | None = None,
 ) -> ScadaWriteTarget:
-    """Create a disabled write companion and write-only TCP mapping.
+    """Create/reuse feedback mapping plus a disabled SCADA write companion.
 
-    Hardware-verified combinations:
+    If the selected feedback request has no TCP Server mapping yet, one is
+    allocated automatically. Hardware-verified combinations:
     - FC01 BOOL feedback -> disabled FC05 command
     - FC03 8/16-bit holding feedback -> disabled FC06 command
     - FC03 32-bit holding feedback -> disabled FC16 command
@@ -91,12 +131,12 @@ def create_scada_write_target(
     else:
         raise ValueError("SCADA write targets require FC03 holding-register or FC01 coil feedback.")
 
-    feedback = [m for m in project.mappings if m.device == device_name and m.request == read_request_name and m.enabled]
-    if len(feedback) != 1:
-        raise ValueError("Create exactly one enabled TCP Server mapping for the feedback request first.")
-    feedback_mapping = feedback[0]
-    if feedback_mapping.register_type != required_mapping_type:
-        raise ValueError(f"Feedback must be mapped to TCP {required_mapping_type}.")
+    feedback_mapping = _feedback_mapping_for_request(
+        project,
+        device_name=device_name,
+        request=read_request,
+        register_type=required_mapping_type,
+    )
 
     write_name = f"{read_request.name}_w"
     if any(r.name == write_name for r in source.requests):
