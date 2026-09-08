@@ -2,7 +2,8 @@
 
 RutOS derives TCP Server tag permissions from the source Modbus Client request.
 Polled read requests expose read-only server values, while disabled write
-requests expose write-only values.
+requests expose write-only values. Write-only TCP Server mappings are kept in a
+dedicated 20000+ address block so all creation workflows use the same layout.
 """
 
 from __future__ import annotations
@@ -14,7 +15,8 @@ from .register_allocator import first_free_register_range, mapping_width, regist
 
 
 TCP_MAPPING_START = 1025
-CAREL_AUTO_WRITE_START = 20000
+WRITE_MAPPING_START = 20000
+CAREL_AUTO_WRITE_START = WRITE_MAPPING_START
 _32BIT_TYPES = {"int32", "uint32", "float32"}
 
 
@@ -36,14 +38,15 @@ def allocate_scada_template_mapping_layout(project: Project, mappings: list[Serv
     for mapping in mappings:
         groups.setdefault((mapping.register_type, mapping.permissions), []).append(mapping)
 
-    for (register_type, _permissions), group in groups.items():
+    for (register_type, permissions), group in groups.items():
         source_min = min(m.register for m in group)
         block_width = max((m.register - source_min) + mapping_width(m) for m in group)
+        floor = WRITE_MAPPING_START if permissions == "w" else TCP_MAPPING_START
         base = first_free_register_range(
             project,
             register_type=register_type,
             width=block_width,
-            default=max(TCP_MAPPING_START, source_min),
+            default=max(floor, source_min),
         )
         for mapping in group:
             result[mapping.name] = (base + (mapping.register - source_min), block_width)
@@ -68,22 +71,11 @@ def _feedback_mapping_for_request(
         return mapping
 
     width = register_value_width(request.data_type, register_type) * max(1, request.count)
-    tcp_register = first_free_register_range(
-        project,
-        register_type=register_type,
-        width=width,
-        default=TCP_MAPPING_START,
-    )
+    tcp_register = first_free_register_range(project, register_type=register_type, width=width, default=TCP_MAPPING_START)
     mapping = ServerMapping(
-        name=request.name,
-        device=device_name,
-        request=request.name,
-        register=tcp_register,
-        register_type=register_type,
-        enabled=True,
-        permissions="r",
-        data_type=request.data_type,
-        count=request.count,
+        name=request.name, device=device_name, request=request.name, register=tcp_register,
+        register_type=register_type, enabled=True, permissions="r",
+        data_type=request.data_type, count=request.count,
     )
     project.mappings.append(mapping)
     return mapping
@@ -98,9 +90,8 @@ def create_scada_write_target(
 ) -> ScadaWriteTarget:
     """Create/reuse feedback mapping plus a disabled Modbus write companion.
 
-    ``write_block_start`` remains available for explicit callers that want a
-    dedicated block, but normal GUI usage leaves it unset so the first free TCP
-    Server range is used automatically.
+    Write mappings always live in the dedicated 20000+ block. An explicit
+    ``write_block_start`` may move the start higher, but never below 20000.
 
     Hardware-verified combinations:
     - FC01 BOOL feedback -> disabled FC05 command
@@ -118,11 +109,7 @@ def create_scada_write_target(
         raise ValueError("Write-request companions currently support one typed value per request.")
 
     if read_request.function == FunctionCode.READ_HOLDING_REGISTERS:
-        write_function = (
-            FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
-            if read_request.data_type in _32BIT_TYPES
-            else FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
-        )
+        write_function = FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS if read_request.data_type in _32BIT_TYPES else FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
         required_mapping_type = "holding_register"
     elif read_request.function == FunctionCode.READ_COILS:
         write_function = FunctionCode.WRITE_SINGLE_COIL
@@ -130,12 +117,7 @@ def create_scada_write_target(
     else:
         raise ValueError("Write-request companions require FC03 holding-register or FC01 coil feedback.")
 
-    feedback_mapping = _feedback_mapping_for_request(
-        project,
-        device_name=device_name,
-        request=read_request,
-        register_type=required_mapping_type,
-    )
+    feedback_mapping = _feedback_mapping_for_request(project, device_name=device_name, request=read_request, register_type=required_mapping_type)
 
     write_name = f"{read_request.name}_w"
     if any(r.name == write_name for r in source.requests):
@@ -144,34 +126,18 @@ def create_scada_write_target(
         raise ValueError(f"TCP mapping {write_name!r} already exists.")
 
     width = mapping_width(feedback_mapping)
-    start = TCP_MAPPING_START if write_block_start is None else max(TCP_MAPPING_START, int(write_block_start))
-    tcp_register = first_free_register_range(
-        project,
-        register_type=required_mapping_type,
-        width=width,
-        default=start,
-    )
+    start = WRITE_MAPPING_START if write_block_start is None else max(WRITE_MAPPING_START, int(write_block_start))
+    tcp_register = first_free_register_range(project, register_type=required_mapping_type, width=width, default=start)
 
     write_request = Request(
-        name=write_name,
-        function=write_function,
-        register=read_request.register,
-        count=1,
-        data_type=read_request.data_type,
-        byte_order=read_request.byte_order,
-        enabled=False,
-        values="0",
+        name=write_name, function=write_function, register=read_request.register,
+        count=1, data_type=read_request.data_type, byte_order=read_request.byte_order,
+        enabled=False, values="0",
     )
     write_mapping = ServerMapping(
-        name=write_name,
-        device=device_name,
-        request=write_name,
-        register=tcp_register,
-        register_type=required_mapping_type,
-        enabled=True,
-        permissions="w",
-        data_type=feedback_mapping.data_type,
-        count=feedback_mapping.count,
+        name=write_name, device=device_name, request=write_name, register=tcp_register,
+        register_type=required_mapping_type, enabled=True, permissions="w",
+        data_type=feedback_mapping.data_type, count=feedback_mapping.count,
     )
 
     source.requests.append(write_request)
