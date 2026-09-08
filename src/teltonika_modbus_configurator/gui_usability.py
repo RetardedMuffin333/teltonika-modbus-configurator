@@ -1,15 +1,16 @@
 """v0.4 usability layer for large Modbus projects.
 
 Keeps Carel import conservative while making large request/mapping sets easier to
-work with: double-click edits, multi-delete, and deliberate multi-select SCADA
-write-target creation.
+work with: double-click edits, multi-delete, deliberate multi-select SCADA
+write-target creation, and direct TCP Server mapping creation from requests.
 """
 
 from __future__ import annotations
 
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 
 from .gui_carel import CarelProjectEditor
+from .request_mapping import create_tcp_mappings_from_requests
 from .scada_write import create_scada_write_target
 
 
@@ -44,11 +45,25 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         super()._build_devices_tab()
         self.requests_tree.configure(selectmode="extended")
         self.requests_tree.bind("<Double-1>", self._double_click_rtu_request)
+        mapping_bar = ttk.Frame(self.requests_tree.master)
+        mapping_bar.pack(fill="x", pady=(4, 0))
+        ttk.Button(
+            mapping_bar,
+            text="Create TCP mapping(s) from selected request(s)",
+            command=self.create_rtu_tcp_mappings,
+        ).pack(side="left", padx=3)
 
     def _build_tcp_clients_tab(self):
         super()._build_tcp_clients_tab()
         self.tcp_client_requests_tree.configure(selectmode="extended")
         self.tcp_client_requests_tree.bind("<Double-1>", self._double_click_tcp_request)
+        mapping_bar = ttk.Frame(self.tcp_client_requests_tree.master)
+        mapping_bar.pack(fill="x", pady=(4, 0))
+        ttk.Button(
+            mapping_bar,
+            text="Create TCP mapping(s) from selected request(s)",
+            command=self.create_tcp_client_tcp_mappings,
+        ).pack(side="left", padx=3)
 
     def _build_mappings_tab(self):
         super()._build_mappings_tab()
@@ -81,7 +96,6 @@ class UsableCarelProjectEditor(CarelProjectEditor):
             self.mappings_tree.selection_set(iid)
             self.edit_mapping()
         else:
-            # Device group rows remain expand/collapse controls rather than editable objects.
             self.mappings_tree.item(iid, open=not self.mappings_tree.item(iid, "open"))
         return "break"
 
@@ -144,6 +158,66 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         self.mark_dirty()
         self.refresh_mappings()
 
+    def _create_selected_tcp_mappings(self, *, device_name: str, request_names: list[str]):
+        if not request_names:
+            return
+        result = create_tcp_mappings_from_requests(
+            self.project,
+            device_name=device_name,
+            request_names=request_names,
+            start_register=1025,
+        )
+        if result.created:
+            self.mark_dirty()
+            self.refresh_all()
+            self.status.set(f"Created {len(result.created)} TCP Server mapping(s) from existing requests")
+
+        lines = []
+        if result.created:
+            lines.append(f"Created {len(result.created)} TCP Server mapping(s):")
+            lines.extend(
+                f"{m.name} -> {m.register_type}:{m.register} ({m.data_type}, count {m.count})"
+                for m in result.created
+            )
+        if result.skipped:
+            if lines:
+                lines.append("")
+            lines.append(f"Skipped {len(result.skipped)}:")
+            lines.extend(result.skipped)
+        messagebox.showinfo(
+            "TCP Server mappings",
+            "\n".join(lines) if lines else "No TCP Server mappings were created.",
+            parent=self,
+        )
+
+    def create_rtu_tcp_mappings(self):
+        device_index = self.selected_device_index()
+        indices = sorted(selected_numeric_indices(self.requests_tree.selection()))
+        if device_index is None or not indices:
+            messagebox.showerror(
+                "TCP Server mappings",
+                "Select one or more RTU requests first.",
+                parent=self,
+            )
+            return
+        device = self.project.devices[device_index]
+        names = [device.requests[i].name for i in indices if 0 <= i < len(device.requests)]
+        self._create_selected_tcp_mappings(device_name=device.name, request_names=names)
+
+    def create_tcp_client_tcp_mappings(self):
+        device_index = self.selected_tcp_client_index()
+        indices = sorted(selected_numeric_indices(self.tcp_client_requests_tree.selection()))
+        if device_index is None or not indices:
+            messagebox.showerror(
+                "TCP Server mappings",
+                "Select one or more TCP client requests first.",
+                parent=self,
+            )
+            return
+        device = self.project.tcp_clients[device_index]
+        names = [device.requests[i].name for i in indices if 0 <= i < len(device.requests)]
+        self._create_selected_tcp_mappings(device_name=device.name, request_names=names)
+
     def _create_selected_scada_targets(self, *, device_name: str, request_names: list[str]):
         if not request_names:
             return
@@ -155,7 +229,6 @@ class UsableCarelProjectEditor(CarelProjectEditor):
                     self.project,
                     device_name=device_name,
                     read_request_name=request_name,
-                    # New deliberate v0.4 command targets stay far from large read maps.
                     write_block_start=20000,
                 )
                 created.append(target.request.name)
