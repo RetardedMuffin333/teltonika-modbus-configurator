@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from .bulk import suggested_register_type
 from .models import Project, Request, ServerMapping, permissions_for_function
 from .register_allocator import first_free_register_range, register_value_width
+from .scada_write import WRITE_MAPPING_START
 
 
 _TCP_TYPE_BY_REQUEST_TYPE = {
@@ -103,11 +104,13 @@ def create_tcp_mappings_from_requests(
             data_type = tcp_mapping_data_type(request)
             count = _mapping_count(request)
             width = count * register_value_width(data_type, register_type)
+            permissions = permissions_for_function(request.function)
+            allocation_start = WRITE_MAPPING_START if permissions == "w" else start_register
             register = first_free_register_range(
                 project,
                 register_type=register_type,
                 width=width,
-                default=start_register,
+                default=allocation_start,
             )
             mapping = ServerMapping(
                 name=_unique_mapping_name(project, device_name, request_name),
@@ -116,7 +119,7 @@ def create_tcp_mappings_from_requests(
                 register=register,
                 register_type=register_type,
                 enabled=True,
-                permissions=permissions_for_function(request.function),
+                permissions=permissions,
                 data_type=data_type,
                 count=count,
             )
