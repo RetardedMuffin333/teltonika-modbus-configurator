@@ -1,7 +1,11 @@
 from teltonika_modbus_configurator.models import (
     Device, FunctionCode, Project, Request, ServerMapping, TcpClientDevice,
 )
-from teltonika_modbus_configurator.scada_write import allocate_scada_template_mapping_layout, create_scada_write_target
+from teltonika_modbus_configurator.scada_write import (
+    allocate_scada_template_mapping_layout,
+    create_scada_write_target,
+    create_write_request_companion,
+)
 from teltonika_modbus_configurator.uci_generator import generate_uci
 from teltonika_modbus_configurator.validator import validate_project
 
@@ -19,6 +23,18 @@ def _project():
             ServerMapping(name="AI_U5_ZunTemp", device="RDF_Test", request="CMD_Oper_Mode", register=1100, register_type="holding_register", permissions="r", data_type="float32", count=1, enabled=False),
         ],
     )
+
+
+def test_create_write_request_companion_does_not_touch_tcp_mappings():
+    project = _project()
+    before = list(project.mappings)
+    request = create_write_request_companion(project, device_name="RDF_Test", read_request_name="CMD_Oper_Mode")
+    assert request.name == "CMD_Oper_Mode_w"
+    assert request.function == FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
+    assert request.register == 101
+    assert request.enabled is False
+    assert request.values == "0"
+    assert project.mappings == before
 
 
 def test_create_write_target_is_disabled_fc06_and_uses_20000_write_block():
