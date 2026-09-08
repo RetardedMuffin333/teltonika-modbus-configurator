@@ -15,7 +15,6 @@ from .scada_write import create_scada_write_target
 
 
 def selected_numeric_indices(selection) -> list[int]:
-    """Return selected numeric Treeview iids in descending order."""
     result = []
     for iid in selection:
         try:
@@ -26,7 +25,6 @@ def selected_numeric_indices(selection) -> list[int]:
 
 
 def selected_mapping_indices(selection) -> list[int]:
-    """Return selected grouped mapping indices in descending order."""
     result = []
     for iid in selection:
         if not str(iid).startswith("mapping::"):
@@ -39,31 +37,23 @@ def selected_mapping_indices(selection) -> list[int]:
 
 
 class UsableCarelProjectEditor(CarelProjectEditor):
-    """Carel editor optimized for projects with hundreds of requests/mappings."""
-
     def _build_devices_tab(self):
         super()._build_devices_tab()
         self.requests_tree.configure(selectmode="extended")
         self.requests_tree.bind("<Double-1>", self._double_click_rtu_request)
-        mapping_bar = ttk.Frame(self.requests_tree.master)
-        mapping_bar.pack(fill="x", pady=(4, 0))
-        ttk.Button(
-            mapping_bar,
-            text="Create TCP mapping(s) from selected request(s)",
-            command=self.create_rtu_tcp_mappings,
-        ).pack(side="left", padx=3)
+        action_bar = ttk.Frame(self.requests_tree.master)
+        action_bar.pack(fill="x", pady=(4, 0))
+        ttk.Button(action_bar, text="Create TCP mapping(s) from selected request(s)", command=self.create_rtu_tcp_mappings).pack(side="left", padx=3)
+        ttk.Button(action_bar, text="Create SCADA write target(s)", command=self.create_rtu_scada_write_target).pack(side="left", padx=3)
 
     def _build_tcp_clients_tab(self):
         super()._build_tcp_clients_tab()
         self.tcp_client_requests_tree.configure(selectmode="extended")
         self.tcp_client_requests_tree.bind("<Double-1>", self._double_click_tcp_request)
-        mapping_bar = ttk.Frame(self.tcp_client_requests_tree.master)
-        mapping_bar.pack(fill="x", pady=(4, 0))
-        ttk.Button(
-            mapping_bar,
-            text="Create TCP mapping(s) from selected request(s)",
-            command=self.create_tcp_client_tcp_mappings,
-        ).pack(side="left", padx=3)
+        action_bar = ttk.Frame(self.tcp_client_requests_tree.master)
+        action_bar.pack(fill="x", pady=(4, 0))
+        ttk.Button(action_bar, text="Create TCP mapping(s) from selected request(s)", command=self.create_tcp_client_tcp_mappings).pack(side="left", padx=3)
+        ttk.Button(action_bar, text="Create SCADA write target(s)", command=self.create_tcp_scada_write_target).pack(side="left", padx=3)
 
     def _build_mappings_tab(self):
         super()._build_mappings_tab()
@@ -108,19 +98,14 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         names = [source.requests[i].name for i in indices if 0 <= i < len(source.requests)]
         blocked = [name for name in names if any(m.device == source.name and m.request == name for m in self.project.mappings)]
         if blocked:
-            messagebox.showerror(
-                "Requests in use",
-                "Delete the TCP Server mappings for these requests first:\n\n" + "\n".join(blocked),
-                parent=self,
-            )
+            messagebox.showerror("Requests in use", "Delete the TCP Server mappings for these requests first:\n\n" + "\n".join(blocked), parent=self)
             return
         if len(indices) > 1 and not messagebox.askyesno("Delete requests", f"Delete {len(indices)} selected RTU requests?", parent=self):
             return
         for index in indices:
             if 0 <= index < len(source.requests):
                 del source.requests[index]
-        self.mark_dirty()
-        self.refresh_requests()
+        self.mark_dirty(); self.refresh_requests()
 
     def delete_tcp_client_request(self):
         device_index = self.selected_tcp_client_index()
@@ -131,19 +116,14 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         names = [source.requests[i].name for i in indices if 0 <= i < len(source.requests)]
         blocked = [name for name in names if any(m.device == source.name and m.request == name for m in self.project.mappings)]
         if blocked:
-            messagebox.showerror(
-                "Requests in use",
-                "Delete the TCP Server mappings for these requests first:\n\n" + "\n".join(blocked),
-                parent=self,
-            )
+            messagebox.showerror("Requests in use", "Delete the TCP Server mappings for these requests first:\n\n" + "\n".join(blocked), parent=self)
             return
         if len(indices) > 1 and not messagebox.askyesno("Delete requests", f"Delete {len(indices)} selected TCP requests?", parent=self):
             return
         for index in indices:
             if 0 <= index < len(source.requests):
                 del source.requests[index]
-        self.mark_dirty()
-        self.refresh_tcp_client_requests()
+        self.mark_dirty(); self.refresh_tcp_client_requests()
 
     def delete_mapping(self):
         indices = selected_mapping_indices(self.mappings_tree.selection())
@@ -155,119 +135,77 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         for index in indices:
             if 0 <= index < len(self.project.mappings):
                 del self.project.mappings[index]
-        self.mark_dirty()
-        self.refresh_mappings()
+        self.mark_dirty(); self.refresh_mappings()
 
     def _create_selected_tcp_mappings(self, *, device_name: str, request_names: list[str]):
         if not request_names:
             return
-        result = create_tcp_mappings_from_requests(
-            self.project,
-            device_name=device_name,
-            request_names=request_names,
-            start_register=1025,
-        )
+        result = create_tcp_mappings_from_requests(self.project, device_name=device_name, request_names=request_names, start_register=1025)
         if result.created:
-            self.mark_dirty()
-            self.refresh_all()
+            self.mark_dirty(); self.refresh_all()
             self.status.set(f"Created {len(result.created)} TCP Server mapping(s) from existing requests")
-
         lines = []
         if result.created:
             lines.append(f"Created {len(result.created)} TCP Server mapping(s):")
-            lines.extend(
-                f"{m.name} -> {m.register_type}:{m.register} ({m.data_type}, count {m.count})"
-                for m in result.created
-            )
+            lines.extend(f"{m.name} -> {m.register_type}:{m.register} ({m.data_type}, count {m.count})" for m in result.created)
         if result.skipped:
-            if lines:
-                lines.append("")
+            if lines: lines.append("")
             lines.append(f"Skipped {len(result.skipped)}:")
             lines.extend(result.skipped)
-        messagebox.showinfo(
-            "TCP Server mappings",
-            "\n".join(lines) if lines else "No TCP Server mappings were created.",
-            parent=self,
-        )
+        messagebox.showinfo("TCP Server mappings", "\n".join(lines) if lines else "No TCP Server mappings were created.", parent=self)
 
     def create_rtu_tcp_mappings(self):
-        device_index = self.selected_device_index()
-        indices = sorted(selected_numeric_indices(self.requests_tree.selection()))
+        device_index = self.selected_device_index(); indices = sorted(selected_numeric_indices(self.requests_tree.selection()))
         if device_index is None or not indices:
-            messagebox.showerror(
-                "TCP Server mappings",
-                "Select one or more RTU requests first.",
-                parent=self,
-            )
-            return
+            messagebox.showerror("TCP Server mappings", "Select one or more RTU requests first.", parent=self); return
         device = self.project.devices[device_index]
-        names = [device.requests[i].name for i in indices if 0 <= i < len(device.requests)]
-        self._create_selected_tcp_mappings(device_name=device.name, request_names=names)
+        self._create_selected_tcp_mappings(device_name=device.name, request_names=[device.requests[i].name for i in indices if 0 <= i < len(device.requests)])
 
     def create_tcp_client_tcp_mappings(self):
-        device_index = self.selected_tcp_client_index()
-        indices = sorted(selected_numeric_indices(self.tcp_client_requests_tree.selection()))
+        device_index = self.selected_tcp_client_index(); indices = sorted(selected_numeric_indices(self.tcp_client_requests_tree.selection()))
         if device_index is None or not indices:
-            messagebox.showerror(
-                "TCP Server mappings",
-                "Select one or more TCP client requests first.",
-                parent=self,
-            )
-            return
+            messagebox.showerror("TCP Server mappings", "Select one or more TCP client requests first.", parent=self); return
         device = self.project.tcp_clients[device_index]
-        names = [device.requests[i].name for i in indices if 0 <= i < len(device.requests)]
-        self._create_selected_tcp_mappings(device_name=device.name, request_names=names)
+        self._create_selected_tcp_mappings(device_name=device.name, request_names=[device.requests[i].name for i in indices if 0 <= i < len(device.requests)])
 
     def _create_selected_scada_targets(self, *, device_name: str, request_names: list[str]):
         if not request_names:
             return
-        created = []
-        failed = []
+        created = []; failed = []
         for request_name in request_names:
             try:
-                target = create_scada_write_target(
-                    self.project,
-                    device_name=device_name,
-                    read_request_name=request_name,
-                    write_block_start=20000,
-                )
-                created.append(target.request.name)
+                target = create_scada_write_target(self.project, device_name=device_name, read_request_name=request_name, write_block_start=20000)
+                created.append(target)
             except Exception as exc:
                 failed.append(f"{request_name}: {exc}")
-
         if created:
-            self.mark_dirty()
-            self.refresh_all()
+            self.mark_dirty(); self.refresh_all()
             self.status.set(f"Created {len(created)} SCADA write target(s) in the 20000+ write block")
-
         text = ""
         if created:
-            text += f"Created {len(created)} write target(s):\n" + "\n".join(created)
+            text += f"Created {len(created)} write target(s):\n"
+            text += "\n".join(
+                f"{t.request.name} (feedback {t.feedback_mapping.register_type}:{t.feedback_mapping.register}, command {t.mapping.register_type}:{t.mapping.register})"
+                for t in created
+            )
         if failed:
-            if text:
-                text += "\n\n"
+            if text: text += "\n\n"
             text += f"Skipped/failed {len(failed)}:\n" + "\n".join(failed)
         messagebox.showinfo("SCADA write targets", text or "No write targets created.", parent=self)
 
     def create_rtu_scada_write_target(self):
-        device_index = self.selected_device_index()
-        indices = sorted(selected_numeric_indices(self.requests_tree.selection()))
+        device_index = self.selected_device_index(); indices = sorted(selected_numeric_indices(self.requests_tree.selection()))
         if device_index is None or not indices:
-            messagebox.showerror("SCADA write target", "Select one or more RTU FC03/FC01 feedback requests first.", parent=self)
-            return
+            messagebox.showerror("SCADA write target", "Select one or more RTU FC03/FC01 feedback requests first.", parent=self); return
         device = self.project.devices[device_index]
-        names = [device.requests[i].name for i in indices if 0 <= i < len(device.requests)]
-        self._create_selected_scada_targets(device_name=device.name, request_names=names)
+        self._create_selected_scada_targets(device_name=device.name, request_names=[device.requests[i].name for i in indices if 0 <= i < len(device.requests)])
 
     def create_tcp_scada_write_target(self):
-        device_index = self.selected_tcp_client_index()
-        indices = sorted(selected_numeric_indices(self.tcp_client_requests_tree.selection()))
+        device_index = self.selected_tcp_client_index(); indices = sorted(selected_numeric_indices(self.tcp_client_requests_tree.selection()))
         if device_index is None or not indices:
-            messagebox.showerror("SCADA write target", "Select one or more TCP FC03/FC01 feedback requests first.", parent=self)
-            return
+            messagebox.showerror("SCADA write target", "Select one or more TCP FC03/FC01 feedback requests first.", parent=self); return
         device = self.project.tcp_clients[device_index]
-        names = [device.requests[i].name for i in indices if 0 <= i < len(device.requests)]
-        self._create_selected_scada_targets(device_name=device.name, request_names=names)
+        self._create_selected_scada_targets(device_name=device.name, request_names=[device.requests[i].name for i in indices if 0 <= i < len(device.requests)])
 
 
 def main() -> None:
