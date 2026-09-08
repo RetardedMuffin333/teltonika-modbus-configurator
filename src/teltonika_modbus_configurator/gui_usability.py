@@ -11,7 +11,7 @@ from tkinter import messagebox, ttk
 
 from .gui_carel import CarelProjectEditor
 from .request_mapping import create_tcp_mappings_from_requests
-from .scada_write import create_scada_write_target
+from .scada_write import create_write_request_companion
 
 
 def selected_numeric_indices(selection) -> list[int]:
@@ -148,20 +148,20 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         device = self.project.tcp_clients[device_index]
         self._create_selected_tcp_mappings(device_name=device.name, request_names=[device.requests[i].name for i in indices if 0 <= i < len(device.requests)])
 
-    def _create_selected_scada_targets(self, *, device_name: str, request_names: list[str]):
+    def _create_selected_write_requests(self, *, device_name: str, request_names: list[str]):
         if not request_names: return
         created = []; failed = []
         for request_name in request_names:
             try:
-                created.append(create_scada_write_target(self.project, device_name=device_name, read_request_name=request_name, write_block_start=20000))
+                created.append(create_write_request_companion(self.project, device_name=device_name, read_request_name=request_name))
             except Exception as exc:
                 failed.append(f"{request_name}: {exc}")
         if created:
-            self.mark_dirty(); self.refresh_all(); self.status.set(f"Created {len(created)} write request(s) with TCP write mapping(s) in the 20000+ block")
+            self.mark_dirty(); self.refresh_all(); self.status.set(f"Created {len(created)} write request(s); TCP mappings unchanged")
         text = ""
         if created:
-            text += f"Created {len(created)} write request(s):\n"
-            text += "\n".join(f"{t.request.name} (feedback {t.feedback_mapping.register_type}:{t.feedback_mapping.register}, write {t.mapping.register_type}:{t.mapping.register})" for t in created)
+            text += f"Created {len(created)} write request(s):\n" + "\n".join(f"{r.name} (FC{int(r.function):02d}, disabled)" for r in created)
+            text += "\n\nNo TCP Server mappings were created. Use the TCP mapping button separately if needed."
         if failed:
             if text: text += "\n\n"
             text += f"Skipped/failed {len(failed)}:\n" + "\n".join(failed)
@@ -172,14 +172,14 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         if device_index is None or not indices:
             messagebox.showerror("Write request", "Select one or more RTU FC03/FC01 read requests first.", parent=self); return
         device = self.project.devices[device_index]
-        self._create_selected_scada_targets(device_name=device.name, request_names=[device.requests[i].name for i in indices if 0 <= i < len(device.requests)])
+        self._create_selected_write_requests(device_name=device.name, request_names=[device.requests[i].name for i in indices if 0 <= i < len(device.requests)])
 
     def create_tcp_scada_write_target(self):
         device_index = self.selected_tcp_client_index(); indices = sorted(selected_numeric_indices(self.tcp_client_requests_tree.selection()))
         if device_index is None or not indices:
             messagebox.showerror("Write request", "Select one or more TCP FC03/FC01 read requests first.", parent=self); return
         device = self.project.tcp_clients[device_index]
-        self._create_selected_scada_targets(device_name=device.name, request_names=[device.requests[i].name for i in indices if 0 <= i < len(device.requests)])
+        self._create_selected_write_requests(device_name=device.name, request_names=[device.requests[i].name for i in indices if 0 <= i < len(device.requests)])
 
 
 def main() -> None:
