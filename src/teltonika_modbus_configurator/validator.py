@@ -129,11 +129,12 @@ def validate_project(project: Project) -> list[ValidationMessage]:
             messages.append(ValidationMessage("error", f"{mapping.name}: TCP register must be {TELTONIKA_TCP_REGISTER_MIN}..{TELTONIKA_TCP_REGISTER_MAX}"))
         elif end > TELTONIKA_TCP_REGISTER_MAX:
             messages.append(ValidationMessage("error", f"{mapping.name}: TCP register range must stay within {TELTONIKA_TCP_REGISTER_MIN}..{TELTONIKA_TCP_REGISTER_MAX}"))
-        ranges = seen_ranges.setdefault(mapping.register_type, [])
-        for other_start, other_end, other_name in ranges:
-            if mapping.register <= other_end and end >= other_start:
-                messages.append(ValidationMessage("error", f"TCP mapping {mapping.name} overlaps {other_name} on {mapping.register_type}"))
-        ranges.append((mapping.register, end, mapping.name))
+        if mapping.deploy:
+            ranges = seen_ranges.setdefault(mapping.register_type, [])
+            for other_start, other_end, other_name in ranges:
+                if mapping.register <= other_end and end >= other_start:
+                    messages.append(ValidationMessage("error", f"TCP mapping {mapping.name} overlaps {other_name} on {mapping.register_type}"))
+            ranges.append((mapping.register, end, mapping.name))
     return messages
 
 
