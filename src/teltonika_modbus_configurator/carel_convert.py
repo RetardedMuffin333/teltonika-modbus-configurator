@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 
 from .carel_import import CarelImportRow
 from .models import FunctionCode, Project, Request, ServerMapping
+from .read_batching import batch_read_items
 from .register_allocator import first_free_register_range, register_value_width
 from .scada_write import CAREL_AUTO_WRITE_START, create_scada_write_target
 
@@ -36,7 +37,6 @@ _AREA_MAP = {
     "holdingregister": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register"), "holdingregisters": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register"), "hr": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register"),
     "inputregister": (FunctionCode.READ_INPUT_REGISTERS, "input_register"), "inputregisters": (FunctionCode.READ_INPUT_REGISTERS, "input_register"), "ir": (FunctionCode.READ_INPUT_REGISTERS, "input_register"),
 }
-
 
 def _key(value: str) -> str:
     return "".join(ch for ch in value.lower() if ch.isalnum())
@@ -100,6 +100,19 @@ def repack_carel_import_items(project: Project, items: list[CarelPlannedItem], *
     return packed
 
 
+def batch_carel_read_items(
+    device,
+    items: list[CarelPlannedItem],
+) -> tuple[list[Request], list[ServerMapping], list[CarelPlannedItem]]:
+    """Replace typed one-value reads with bounded raw read blocks.
+
+    Individual TCP Server tags keep their original names, datatypes and server
+    addresses. ``source_offset`` selects the value inside the shared request via
+    RutOS ``tag_start``.
+    """
+    return batch_read_items(device.requests, items)
+
+
 def apply_carel_import_plan(
     project: Project,
     items: list[CarelPlannedItem],
@@ -108,6 +121,7 @@ def apply_carel_import_plan(
     mapping_start: int = 1025,
     create_write_companions: bool = False,
     write_mapping_start: int = CAREL_AUTO_WRITE_START,
+    batch_reads: bool = False,
 ) -> tuple[int, int]:
     """Apply selected rows and optionally create write companions for ReadWrite values.
 
@@ -120,7 +134,14 @@ def apply_carel_import_plan(
         raise ValueError(f"Modbus TCP client {tcp_device_name!r} does not exist.")
     ready = [item for item in items if item.request is not None and item.mapping is not None]
     packed = repack_carel_import_items(project, ready, mapping_start=mapping_start)
-    device.requests.extend(item.request for item in packed if item.request is not None)
+    if batch_reads and create_write_companions:
+        raise ValueError("Batched reads and automatic SCADA write companions cannot be combined yet.")
+    if batch_reads:
+        block_requests, block_mappings, packed = batch_carel_read_items(device, packed)
+        device.requests.extend(block_requests)
+        project.mappings.extend(block_mappings)
+    else:
+        device.requests.extend(item.request for item in packed if item.request is not None)
     project.mappings.extend(item.mapping for item in packed if item.mapping is not None)
 
     write_count = 0

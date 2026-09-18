@@ -8,11 +8,10 @@ Known/verified symbol prefixes:
 - ``DA``  - Coil / digital output
 - ``IRR`` - FLOAT32 Input Register
 - ``HRR`` - FLOAT32 Holding Register
-- ``HRD`` - FLOAT64 Holding Register
+- ``HRD`` - 32-bit Holding Register (signed/unsigned)
 
-Unknown atvise encodings are rejected instead of guessed. This is important for
-32/64-bit integer values and FLOAT64 Input Registers, whose Connect prefixes have
-not yet been verified against a known-good symbol file.
+Unknown atvise encodings are rejected instead of guessed. FLOAT64 and 32-bit
+Input Register symbol encodings remain unverified.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ class AtviseSymbolExportError(ValueError):
 
 def _prefix_for_mapping(mapping: ServerMapping) -> str:
     register_type = mapping.register_type
-    data_type = mapping.data_type
+    data_type = mapping.symbol_data_type or mapping.data_type
 
     if register_type == "coil":
         return "DA"
@@ -51,7 +50,7 @@ def _prefix_for_mapping(mapping: ServerMapping) -> str:
             return "HR"
         if data_type == "float32":
             return "HRR"
-        if data_type == "float64":
+        if data_type in {"int32", "uint32"}:
             return "HRD"
         raise AtviseSymbolExportError(
             f"TCP mapping {mapping.name!r} uses holding_register/{data_type}; "
@@ -87,7 +86,10 @@ def export_atvise_symbols(project: Project, *, include_disabled: bool = False) -
     are not expected to be available through the RutOS Modbus TCP Server.
     """
 
-    mappings = [m for m in project.mappings if include_disabled or m.enabled]
+    mappings = [
+        m for m in project.mappings
+        if m.export_symbol and (include_disabled or m.enabled)
+    ]
     lines = ["[]"]
     lines.extend(_symbol_line(mapping) for mapping in mappings)
     return "\n".join(lines) + "\n"

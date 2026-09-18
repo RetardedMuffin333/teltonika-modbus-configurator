@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -10,6 +11,7 @@ from .carel_import import load_carel_xls
 from .gui import vars_for
 from .gui_scada import ScadaProjectEditor
 from .gui_widgets import tree_with_scrollbars
+from .mapping_lifecycle import remove_server_mappings
 from .models import ServerMapping
 
 
@@ -62,6 +64,11 @@ class CarelProjectEditor(ScadaProjectEditor):
         self.mappings_tree.delete(*self.mappings_tree.get_children())
         grouped = {}
         for index, mapping in enumerate(self.project.mappings):
+            # Symbol aliases describe individual SCADA variables inside a
+            # deployed block.  They belong in the .Symbol export, not in the
+            # list of physical RutOS TCP Server mappings.
+            if not mapping.deploy:
+                continue
             grouped.setdefault(mapping.device, []).append((index, mapping))
         for device_name, mappings in grouped.items():
             group_iid = f"device::{device_name}"
@@ -92,11 +99,12 @@ class CarelProjectEditor(ScadaProjectEditor):
         if not values:
             return
         access = self._mapping_access(values["device"], values["request"])
-        self.project.mappings[index] = ServerMapping(
+        self.project.mappings[index] = replace(
+            mapping,
             name=values["name"], device=values["device"], request=values["request"],
             register=int(values["register"]), register_type=values["register_type"],
             enabled=bool(values["enabled"]), permissions=access, data_type=values["data_type"],
-            count=int(values["count"]), source_id=mapping.source_id,
+            count=int(values["count"]),
         )
         self.mark_dirty()
         self.refresh_mappings()
@@ -106,7 +114,7 @@ class CarelProjectEditor(ScadaProjectEditor):
         if index is None:
             messagebox.showinfo("TCP mapping", "Expand a source device and select a mapping to delete.", parent=self)
             return
-        del self.project.mappings[index]
+        remove_server_mappings(self.project, [index])
         self.mark_dirty()
         self.refresh_mappings()
 
@@ -167,6 +175,21 @@ class CarelPreviewWindow(tk.Toplevel):
             text="Create SCADA write companions for selected ReadWrite Coil/HoldingRegister values",
             variable=self.write_companions_var,
         ).grid(row=1, column=0, columnspan=6, padx=6, pady=(0, 6), sticky="w")
+
+        self.read_mode_var = tk.StringVar(value="batched")
+        ttk.Label(options, text="Read import mode:").grid(row=2, column=0, padx=6, pady=(0, 6), sticky="w")
+        ttk.Radiobutton(
+            options,
+            text="Batched (recommended; FC03/FC04 up to 100 registers, FC01/FC02 up to 1000 bits)",
+            variable=self.read_mode_var,
+            value="batched",
+        ).grid(row=2, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
+        ttk.Radiobutton(
+            options,
+            text="Register by register",
+            variable=self.read_mode_var,
+            value="individual",
+        ).grid(row=2, column=5, padx=6, pady=(0, 6), sticky="w")
 
         filters = ttk.Frame(self); filters.pack(fill="x", padx=10, pady=(0, 5))
         ttk.Label(filters, text="Modbus type:").pack(side="left")
@@ -259,6 +282,9 @@ class CarelPreviewWindow(tk.Toplevel):
         if not selected_items:
             messagebox.showwarning("Carel import", "Select at least one ready row to import.", parent=self); return
         extra = "\nSCADA write companions will also be created for selected ReadWrite Coil/HoldingRegister rows." if self.write_companions_var.get() else ""
+        batch_reads = self.read_mode_var.get() == "batched"
+        if batch_reads:
+            extra += "\nSelected reads will share bounded block requests using RutOS tag offsets."
         if not messagebox.askyesno(
             "Carel import",
             f"Import {len(selected_items)} selected Carel variables into {self.device_var.get()}?\n\n"
@@ -270,6 +296,7 @@ class CarelPreviewWindow(tk.Toplevel):
             read_count, write_count = apply_carel_import_plan(
                 self.parent.project, selected_items, tcp_device_name=self.device_var.get(),
                 mapping_start=int(self.start_var.get()), create_write_companions=self.write_companions_var.get(),
+                batch_reads=batch_reads,
             )
         except Exception as exc:
             messagebox.showerror("Carel import", str(exc), parent=self); return
