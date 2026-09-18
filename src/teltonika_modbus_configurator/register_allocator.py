@@ -7,13 +7,6 @@ from .models import Project, ServerMapping
 
 _TWO_REGISTER_TYPES = {"int32", "uint32", "float32"}
 
-# Keep automatically generated read areas below the Modbus FC03/FC04 limit of
-# 125 registers.  The unused addresses between blocks also force clients whose
-# maximum read gap is zero to issue a separate request for each block.
-READ_BLOCK_WIDTH = 100
-READ_BLOCK_GAP = 2
-
-
 def register_value_width(data_type: str, register_type: str) -> int:
     """Return Modbus address width for one mapped value.
 
@@ -36,8 +29,6 @@ def first_free_register_range(
     register_type: str,
     width: int = 1,
     default: int = 1025,
-    block_width: int | None = None,
-    block_gap: int = 0,
 ) -> int:
     """Return the first contiguous free range in one Modbus address space.
 
@@ -46,13 +37,6 @@ def first_free_register_range(
     space. Width-aware mappings such as float32/int32/uint32 are respected.
     """
     width = max(1, width)
-    if block_width is not None:
-        block_width = max(1, block_width)
-        block_gap = max(1, block_gap)
-        if width > block_width:
-            raise ValueError(
-                f"Requested range width {width} exceeds block width {block_width}."
-            )
     candidate = max(1025, default)
     ranges = sorted(
         (m.register, m.register + mapping_width(m) - 1)
@@ -60,31 +44,12 @@ def first_free_register_range(
         if m.enabled and m.register_type == register_type
     )
 
-    def fit_to_block(address: int) -> int:
-        if block_width is None:
-            return address
-        stride = block_width + block_gap
-        offset = address - default
-        block_index = max(0, offset // stride)
-        block_start = default + block_index * stride
-        position = address - block_start
-        if position < 0 or position + width > block_width:
-            return block_start + stride
-        return address
-
-    candidate = fit_to_block(candidate)
-    while True:
-        collision_end = None
-        for start, end in ranges:
-            if end < candidate:
-                continue
-            if candidate + width - 1 < start:
-                break
-            collision_end = end
-            break
-        if collision_end is None:
-            break
-        candidate = fit_to_block(collision_end + 1)
+    for start, end in ranges:
+        if end < candidate:
+            continue
+        if candidate + width - 1 < start:
+            return candidate
+        candidate = max(candidate, end + 1)
 
     if candidate + width - 1 > 65536:
         raise ValueError(
