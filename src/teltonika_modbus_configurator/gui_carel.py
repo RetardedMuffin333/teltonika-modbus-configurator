@@ -11,6 +11,7 @@ from .carel_import import load_carel_xls
 from .gui import vars_for
 from .gui_scada import ScadaProjectEditor
 from .gui_widgets import tree_with_scrollbars
+from .mapping_lifecycle import remove_server_mappings
 from .models import ServerMapping
 
 
@@ -113,7 +114,7 @@ class CarelProjectEditor(ScadaProjectEditor):
         if index is None:
             messagebox.showinfo("TCP mapping", "Expand a source device and select a mapping to delete.", parent=self)
             return
-        del self.project.mappings[index]
+        remove_server_mappings(self.project, [index])
         self.mark_dirty()
         self.refresh_mappings()
 
@@ -175,12 +176,20 @@ class CarelPreviewWindow(tk.Toplevel):
             variable=self.write_companions_var,
         ).grid(row=1, column=0, columnspan=6, padx=6, pady=(0, 6), sticky="w")
 
-        self.batch_reads_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
+        self.read_mode_var = tk.StringVar(value="batched")
+        ttk.Label(options, text="Read import mode:").grid(row=2, column=0, padx=6, pady=(0, 6), sticky="w")
+        ttk.Radiobutton(
             options,
-            text="Batch read requests (experimental: FC03/FC04 up to 100 registers, FC01/FC02 up to 1000 bits)",
-            variable=self.batch_reads_var,
-        ).grid(row=2, column=0, columnspan=6, padx=6, pady=(0, 6), sticky="w")
+            text="Batched (recommended; FC03/FC04 up to 100 registers, FC01/FC02 up to 1000 bits)",
+            variable=self.read_mode_var,
+            value="batched",
+        ).grid(row=2, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
+        ttk.Radiobutton(
+            options,
+            text="Register by register",
+            variable=self.read_mode_var,
+            value="individual",
+        ).grid(row=2, column=5, padx=6, pady=(0, 6), sticky="w")
 
         filters = ttk.Frame(self); filters.pack(fill="x", padx=10, pady=(0, 5))
         ttk.Label(filters, text="Modbus type:").pack(side="left")
@@ -273,7 +282,8 @@ class CarelPreviewWindow(tk.Toplevel):
         if not selected_items:
             messagebox.showwarning("Carel import", "Select at least one ready row to import.", parent=self); return
         extra = "\nSCADA write companions will also be created for selected ReadWrite Coil/HoldingRegister rows." if self.write_companions_var.get() else ""
-        if self.batch_reads_var.get():
+        batch_reads = self.read_mode_var.get() == "batched"
+        if batch_reads:
             extra += "\nSelected reads will share bounded block requests using RutOS tag offsets."
         if not messagebox.askyesno(
             "Carel import",
@@ -286,7 +296,7 @@ class CarelPreviewWindow(tk.Toplevel):
             read_count, write_count = apply_carel_import_plan(
                 self.parent.project, selected_items, tcp_device_name=self.device_var.get(),
                 mapping_start=int(self.start_var.get()), create_write_companions=self.write_companions_var.get(),
-                batch_reads=self.batch_reads_var.get(),
+                batch_reads=batch_reads,
             )
         except Exception as exc:
             messagebox.showerror("Carel import", str(exc), parent=self); return
