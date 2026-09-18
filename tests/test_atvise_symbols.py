@@ -70,6 +70,12 @@ def test_semantic_symbol_datatype_can_differ_from_raw_server_tag():
     assert "sym-Temperature=HRR1025," in export_atvise_symbols(Project(mappings=[mapping]))
 
 
+def test_physical_block_mapping_can_be_excluded_from_symbol_export():
+    mapping = _mapping("Batch", 1025, "holding_register", "uint16")
+    mapping.export_symbol = False
+    assert export_atvise_symbols(Project(mappings=[mapping])) == "[]\n"
+
+
 @pytest.mark.parametrize(
     ("register_type", "data_type"),
     [
