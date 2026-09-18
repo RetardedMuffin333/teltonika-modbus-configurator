@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 
 from .carel_import import CarelImportRow
 from .models import FunctionCode, Project, Request, ServerMapping
+from .read_batching import batch_read_items
 from .register_allocator import first_free_register_range, register_value_width
 from .scada_write import CAREL_AUTO_WRITE_START, create_scada_write_target
 
@@ -36,14 +37,6 @@ _AREA_MAP = {
     "holdingregister": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register"), "holdingregisters": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register"), "hr": (FunctionCode.READ_HOLDING_REGISTERS, "holding_register"),
     "inputregister": (FunctionCode.READ_INPUT_REGISTERS, "input_register"), "inputregisters": (FunctionCode.READ_INPUT_REGISTERS, "input_register"), "ir": (FunctionCode.READ_INPUT_REGISTERS, "input_register"),
 }
-
-_BATCH_LIMIT = {
-    FunctionCode.READ_HOLDING_REGISTERS: 100,
-    FunctionCode.READ_INPUT_REGISTERS: 100,
-    FunctionCode.READ_COILS: 1000,
-    FunctionCode.READ_DISCRETE_INPUTS: 1000,
-}
-
 
 def _key(value: str) -> str:
     return "".join(ch for ch in value.lower() if ch.isalnum())
@@ -107,19 +100,6 @@ def repack_carel_import_items(project: Project, items: list[CarelPlannedItem], *
     return packed
 
 
-def _unique_request_name(device, base: str, reserved: set[str]) -> str:
-    used = {request.name for request in device.requests} | reserved
-    if base not in used:
-        reserved.add(base)
-        return base
-    ordinal = 2
-    while f"{base}_{ordinal}" in used:
-        ordinal += 1
-    name = f"{base}_{ordinal}"
-    reserved.add(name)
-    return name
-
-
 def batch_carel_read_items(
     device,
     items: list[CarelPlannedItem],
@@ -130,90 +110,7 @@ def batch_carel_read_items(
     addresses. ``source_offset`` selects the value inside the shared request via
     RutOS ``tag_start``.
     """
-    groups: dict[FunctionCode, list[CarelPlannedItem]] = {}
-    for item in items:
-        if item.request is None or item.mapping is None or not item.request.function.is_read:
-            continue
-        groups.setdefault(item.request.function, []).append(item)
-
-    requests: list[Request] = []
-    block_mappings: list[ServerMapping] = []
-    converted: list[CarelPlannedItem] = []
-    reserved: set[str] = set()
-    for function, group in groups.items():
-        register_type = group[0].mapping.register_type
-        destination_cursor = min(item.mapping.register for item in group)
-        limit = _BATCH_LIMIT[function]
-        ordered = sorted(group, key=lambda item: item.request.register)
-        blocks: list[list[CarelPlannedItem]] = []
-        current: list[CarelPlannedItem] = []
-        block_start = 0
-        block_end = -1
-        for item in ordered:
-            width = register_value_width(item.request.data_type, register_type)
-            item_start = item.request.register
-            item_end = item_start + width - 1
-            if current and item_end - block_start + 1 > limit:
-                blocks.append(current)
-                current = []
-            if not current:
-                block_start = item_start
-                block_end = item_end
-            else:
-                block_end = max(block_end, item_end)
-            current.append(item)
-        if current:
-            blocks.append(current)
-
-        for ordinal, block in enumerate(blocks, start=1):
-            start = min(item.request.register for item in block)
-            end = max(
-                item.request.register + register_value_width(item.request.data_type, register_type) - 1
-                for item in block
-            )
-            raw_type = "bool" if register_type in {"coil", "discrete_input"} else "uint16"
-            raw_order = "none" if raw_type == "bool" else "high_byte_first"
-            name = _unique_request_name(device, f"Batch_FC{int(function):02d}_{start}_{end}", reserved)
-            request = Request(
-                name=name,
-                function=function,
-                register=start,
-                count=end - start + 1,
-                data_type=raw_type,
-                byte_order=raw_order,
-                enabled=True,
-            )
-            requests.append(request)
-            block_mappings.append(ServerMapping(
-                name=name,
-                device=group[0].mapping.device,
-                request=name,
-                register=destination_cursor,
-                register_type=register_type,
-                enabled=True,
-                permissions="r",
-                data_type=raw_type,
-                count=request.count,
-                source_offset=0,
-                export_symbol=False,
-            ))
-            for item in block:
-                value_width = register_value_width(item.request.data_type, register_type)
-                source_offset = item.request.register - start
-                mapping = replace(
-                    item.mapping,
-                    request=name,
-                    register=destination_cursor + source_offset,
-                    source_offset=source_offset,
-                    data_type=raw_type,
-                    count=value_width,
-                    symbol_data_type=item.mapping.data_type,
-                    deploy=False,
-                    export_symbol=True,
-                )
-                converted.append(replace(item, request=request, mapping=mapping, status="Ready (batched)"))
-            destination_cursor += request.count
-    return requests, block_mappings, converted
+    return batch_read_items(device.requests, items)
 
 
 def apply_carel_import_plan(
