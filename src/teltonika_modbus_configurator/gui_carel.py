@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -62,6 +63,11 @@ class CarelProjectEditor(ScadaProjectEditor):
         self.mappings_tree.delete(*self.mappings_tree.get_children())
         grouped = {}
         for index, mapping in enumerate(self.project.mappings):
+            # Symbol aliases describe individual SCADA variables inside a
+            # deployed block.  They belong in the .Symbol export, not in the
+            # list of physical RutOS TCP Server mappings.
+            if not mapping.deploy:
+                continue
             grouped.setdefault(mapping.device, []).append((index, mapping))
         for device_name, mappings in grouped.items():
             group_iid = f"device::{device_name}"
@@ -92,11 +98,12 @@ class CarelProjectEditor(ScadaProjectEditor):
         if not values:
             return
         access = self._mapping_access(values["device"], values["request"])
-        self.project.mappings[index] = ServerMapping(
+        self.project.mappings[index] = replace(
+            mapping,
             name=values["name"], device=values["device"], request=values["request"],
             register=int(values["register"]), register_type=values["register_type"],
             enabled=bool(values["enabled"]), permissions=access, data_type=values["data_type"],
-            count=int(values["count"]), source_id=mapping.source_id,
+            count=int(values["count"]),
         )
         self.mark_dirty()
         self.refresh_mappings()
