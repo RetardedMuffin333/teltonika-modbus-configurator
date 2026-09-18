@@ -307,6 +307,8 @@ class ProjectEditor(tk.Tk):
     def refresh_mappings(self):
         self._clear(self.mappings_tree)
         for i, m in enumerate(self.project.mappings):
+            if not m.deploy:
+                continue
             self.mappings_tree.insert("", "end", iid=str(i), values=(m.name, m.device, m.request, m.register_type, m.register, "Yes" if m.enabled else "No"))
 
     def new_project(self):
@@ -517,7 +519,7 @@ class ProjectEditor(tk.Tk):
         i = int(sel[0]); m = self.project.mappings[i]
         v = self._mapping_dialog(vars_for(m))
         if not v: return
-        self.project.mappings[i] = ServerMapping(v["name"], v["device"], v["request"], int(v["register"]), v["register_type"], bool(v["enabled"]))
+        self.project.mappings[i] = replace(m, name=v["name"], device=v["device"], request=v["request"], register=int(v["register"]), register_type=v["register_type"], enabled=bool(v["enabled"]))
         self.mark_dirty(); self.refresh_mappings()
 
     def delete_mapping(self):
