@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 
 from .models import FunctionCode, Project, Request, permissions_for_function
-from .register_allocator import register_value_width
 
 TELTONIKA_TCP_REGISTER_MIN = 1025
 TELTONIKA_TCP_REGISTER_MAX = 65536
@@ -119,12 +118,10 @@ def validate_project(project: Project) -> list[ValidationMessage]:
         expected_access = permissions_for_function(request.function)
         if mapping.permissions != expected_access:
             messages.append(ValidationMessage("error", f"{mapping.name}: access is automatic for FC{int(request.function):02d} and must be '{expected_access}'"))
-        source_width = request.count * register_value_width(request.data_type, expected_type)
-        mapping_source_width = mapping.count * register_value_width(mapping.data_type, mapping.register_type)
-        if mapping.enabled and mapping.source_offset + mapping_source_width > source_width:
+        if mapping.enabled and mapping.source_offset + mapping.count > request.count:
             messages.append(ValidationMessage(
                 "error",
-                f"{mapping.name}: source offset/range exceeds request {mapping.request!r} width {source_width}",
+                f"{mapping.name}: source offset/range exceeds request {mapping.request!r} count {request.count}",
             ))
 
         end = mapping.register + mapping.count - 1
