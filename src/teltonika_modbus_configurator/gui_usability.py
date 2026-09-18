@@ -10,6 +10,11 @@ from __future__ import annotations
 from tkinter import messagebox, ttk
 
 from .gui_carel import CarelProjectEditor
+from .mapping_lifecycle import (
+    deployed_mappings_for_request,
+    remove_server_mappings,
+    remove_symbol_aliases_for_requests,
+)
 from .request_mapping import create_tcp_mappings_from_requests
 from .scada_write import create_write_request_companion
 
@@ -90,10 +95,11 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         if device_index is None or not indices: return
         source = self.project.devices[device_index]
         names = [source.requests[i].name for i in indices if 0 <= i < len(source.requests)]
-        blocked = [name for name in names if any(m.device == source.name and m.request == name for m in self.project.mappings)]
+        blocked = [name for name in names if deployed_mappings_for_request(self.project, device_name=source.name, request_name=name)]
         if blocked:
             messagebox.showerror("Requests in use", "Delete the TCP Server mappings for these requests first:\n\n" + "\n".join(blocked), parent=self); return
         if len(indices) > 1 and not messagebox.askyesno("Delete requests", f"Delete {len(indices)} selected RTU requests?", parent=self): return
+        remove_symbol_aliases_for_requests(self.project, device_name=source.name, request_names=set(names))
         for index in indices:
             if 0 <= index < len(source.requests): del source.requests[index]
         self.mark_dirty(); self.refresh_requests()
@@ -103,10 +109,11 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         if device_index is None or not indices: return
         source = self.project.tcp_clients[device_index]
         names = [source.requests[i].name for i in indices if 0 <= i < len(source.requests)]
-        blocked = [name for name in names if any(m.device == source.name and m.request == name for m in self.project.mappings)]
+        blocked = [name for name in names if deployed_mappings_for_request(self.project, device_name=source.name, request_name=name)]
         if blocked:
             messagebox.showerror("Requests in use", "Delete the TCP Server mappings for these requests first:\n\n" + "\n".join(blocked), parent=self); return
         if len(indices) > 1 and not messagebox.askyesno("Delete requests", f"Delete {len(indices)} selected TCP requests?", parent=self): return
+        remove_symbol_aliases_for_requests(self.project, device_name=source.name, request_names=set(names))
         for index in indices:
             if 0 <= index < len(source.requests): del source.requests[index]
         self.mark_dirty(); self.refresh_tcp_client_requests()
@@ -116,8 +123,7 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         if not indices:
             messagebox.showinfo("TCP mapping", "Expand a source device and select one or more mappings to delete.", parent=self); return
         if len(indices) > 1 and not messagebox.askyesno("Delete mappings", f"Delete {len(indices)} selected TCP Server mappings?", parent=self): return
-        for index in indices:
-            if 0 <= index < len(self.project.mappings): del self.project.mappings[index]
+        remove_server_mappings(self.project, indices)
         self.mark_dirty(); self.refresh_mappings()
 
     def _create_selected_tcp_mappings(self, *, device_name: str, request_names: list[str]):
