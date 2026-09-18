@@ -130,6 +130,9 @@ class ServerMapping:
     data_type: str = "int16"
     count: int = 1
     source_id: str | None = None
+    # Zero-based value/register offset inside the source request result.
+    # RutOS serializes this as modbus_server tag_start.
+    source_offset: int = 0
 
 
 @dataclass(slots=True)
