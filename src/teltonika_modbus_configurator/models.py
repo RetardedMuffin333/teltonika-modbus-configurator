@@ -133,6 +133,9 @@ class ServerMapping:
     # Zero-based value/register offset inside the source request result.
     # RutOS serializes this as modbus_server tag_start.
     source_offset: int = 0
+    # Optional semantic datatype used only for SCADA symbol export. Batched raw
+    # register tags remain uint16 in RutOS while atvise decodes HRR/HRD values.
+    symbol_data_type: str | None = None
 
 
 @dataclass(slots=True)
