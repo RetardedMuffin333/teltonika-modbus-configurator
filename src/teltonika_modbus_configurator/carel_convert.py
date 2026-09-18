@@ -130,28 +130,30 @@ def batch_carel_read_items(
     addresses. ``source_offset`` selects the value inside the shared request via
     RutOS ``tag_start``.
     """
-    groups: dict[FunctionCode, list[CarelPlannedItem]] = {}
+    groups: dict[tuple[FunctionCode, str, str], list[CarelPlannedItem]] = {}
     for item in items:
         if item.request is None or item.mapping is None or not item.request.function.is_read:
             continue
-        groups.setdefault(item.request.function, []).append(item)
+        key = (item.request.function, item.request.data_type, item.request.byte_order)
+        groups.setdefault(key, []).append(item)
 
     requests: list[Request] = []
     converted: list[CarelPlannedItem] = []
     reserved: set[str] = set()
-    for function, group in groups.items():
+    for (function, data_type, byte_order), group in groups.items():
         register_type = group[0].mapping.register_type
         limit = _BATCH_LIMIT[function]
+        value_width = register_value_width(data_type, register_type)
         ordered = sorted(group, key=lambda item: item.request.register)
         blocks: list[list[CarelPlannedItem]] = []
         current: list[CarelPlannedItem] = []
         block_start = 0
         block_end = -1
         for item in ordered:
-            width = register_value_width(item.request.data_type, register_type)
             item_start = item.request.register
-            item_end = item_start + width - 1
-            if current and item_end - block_start + 1 > limit:
+            item_end = item_start + value_width - 1
+            misaligned = current and (item_start - block_start) % value_width != 0
+            if current and (misaligned or item_end - block_start + 1 > limit):
                 blocks.append(current)
                 current = []
             if not current:
@@ -169,15 +171,13 @@ def batch_carel_read_items(
                 item.request.register + register_value_width(item.request.data_type, register_type) - 1
                 for item in block
             )
-            raw_type = "bool" if register_type in {"coil", "discrete_input"} else "uint16"
-            byte_order = "none" if raw_type == "bool" else "high_byte_first"
             name = _unique_request_name(device, f"Batch_FC{int(function):02d}_{start}_{end}", reserved)
             request = Request(
                 name=name,
                 function=function,
                 register=start,
-                count=end - start + 1,
-                data_type=raw_type,
+                count=(end - start + 1) // value_width,
+                data_type=data_type,
                 byte_order=byte_order,
                 enabled=True,
             )
@@ -186,7 +186,7 @@ def batch_carel_read_items(
                 mapping = replace(
                     item.mapping,
                     request=name,
-                    source_offset=item.request.register - start,
+                    source_offset=(item.request.register - start) // value_width,
                 )
                 converted.append(replace(item, request=request, mapping=mapping, status="Ready (batched)"))
     return requests, converted
