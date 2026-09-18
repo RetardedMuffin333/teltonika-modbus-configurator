@@ -136,6 +136,11 @@ class ServerMapping:
     # Optional semantic datatype used only for SCADA symbol export. Batched raw
     # register tags remain uint16 in RutOS while atvise decodes HRR/HRD values.
     symbol_data_type: str | None = None
+    # Some batched imports use one physical RutOS block mapping plus individual
+    # SCADA symbol aliases.  Deployment and symbol export are therefore
+    # intentionally independent.
+    deploy: bool = True
+    export_symbol: bool = True
 
 
 @dataclass(slots=True)
