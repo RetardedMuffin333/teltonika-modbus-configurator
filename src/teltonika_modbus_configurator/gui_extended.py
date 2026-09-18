@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -193,6 +194,8 @@ class ExtendedProjectEditor(DeploymentEditor):
     def refresh_mappings(self):
         self._clear(self.mappings_tree)
         for i, m in enumerate(self.project.mappings):
+            if not m.deploy:
+                continue
             request = self._request_for_mapping(m.device, m.request)
             access = permissions_for_function(request.function) if request else m.permissions
             self.mappings_tree.insert("", "end", iid=str(i), values=(m.name, m.device, m.request, m.register_type, m.register, access, m.data_type, m.count, "Yes" if m.enabled else "No"))
@@ -312,8 +315,7 @@ class ExtendedProjectEditor(DeploymentEditor):
         i = int(sel[0]); m = self.project.mappings[i]; v = self._mapping_dialog(vars_for(m))
         if not v: return
         access = self._mapping_access(v["device"], v["request"])
-        source_id = m.source_id
-        self.project.mappings[i] = ServerMapping(name=v["name"], device=v["device"], request=v["request"], register=int(v["register"]), register_type=v["register_type"], enabled=bool(v["enabled"]), permissions=access, data_type=v["data_type"], count=int(v["count"]), source_id=source_id)
+        self.project.mappings[i] = replace(m, name=v["name"], device=v["device"], request=v["request"], register=int(v["register"]), register_type=v["register_type"], enabled=bool(v["enabled"]), permissions=access, data_type=v["data_type"], count=int(v["count"]))
         self.mark_dirty(); self.refresh_mappings()
 
     def open_bulk_generator(self):
@@ -329,7 +331,7 @@ class ExtendedProjectEditor(DeploymentEditor):
             text = export_atvise_symbols(self.project, include_disabled=include_disabled)
         except Exception as exc:
             messagebox.showerror("atvise symbol export", str(exc), parent=self); return
-        selected = [m for m in self.project.mappings if include_disabled or m.enabled]
+        selected = [m for m in self.project.mappings if m.export_symbol and (include_disabled or m.enabled)]
         if not selected:
             messagebox.showerror("atvise symbol export", "There are no TCP mappings to export.", parent=self); return
         default_name = self.path.stem if self.path else "Teltonika_Modbus"
