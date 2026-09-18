@@ -123,7 +123,7 @@ def _unique_request_name(device, base: str, reserved: set[str]) -> str:
 def batch_carel_read_items(
     device,
     items: list[CarelPlannedItem],
-) -> tuple[list[Request], list[CarelPlannedItem]]:
+) -> tuple[list[Request], list[ServerMapping], list[CarelPlannedItem]]:
     """Replace typed one-value reads with bounded raw read blocks.
 
     Individual TCP Server tags keep their original names, datatypes and server
@@ -137,10 +137,12 @@ def batch_carel_read_items(
         groups.setdefault(item.request.function, []).append(item)
 
     requests: list[Request] = []
+    block_mappings: list[ServerMapping] = []
     converted: list[CarelPlannedItem] = []
     reserved: set[str] = set()
     for function, group in groups.items():
         register_type = group[0].mapping.register_type
+        destination_cursor = min(item.mapping.register for item in group)
         limit = _BATCH_LIMIT[function]
         ordered = sorted(group, key=lambda item: item.request.register)
         blocks: list[list[CarelPlannedItem]] = []
@@ -182,18 +184,36 @@ def batch_carel_read_items(
                 enabled=True,
             )
             requests.append(request)
+            block_mappings.append(ServerMapping(
+                name=name,
+                device=group[0].mapping.device,
+                request=name,
+                register=destination_cursor,
+                register_type=register_type,
+                enabled=True,
+                permissions="r",
+                data_type=raw_type,
+                count=request.count,
+                source_offset=0,
+                export_symbol=False,
+            ))
             for item in block:
                 value_width = register_value_width(item.request.data_type, register_type)
+                source_offset = item.request.register - start
                 mapping = replace(
                     item.mapping,
                     request=name,
-                    source_offset=item.request.register - start,
+                    register=destination_cursor + source_offset,
+                    source_offset=source_offset,
                     data_type=raw_type,
                     count=value_width,
                     symbol_data_type=item.mapping.data_type,
+                    deploy=False,
+                    export_symbol=True,
                 )
                 converted.append(replace(item, request=request, mapping=mapping, status="Ready (batched)"))
-    return requests, converted
+            destination_cursor += request.count
+    return requests, block_mappings, converted
 
 
 def apply_carel_import_plan(
@@ -220,8 +240,9 @@ def apply_carel_import_plan(
     if batch_reads and create_write_companions:
         raise ValueError("Batched reads and automatic SCADA write companions cannot be combined yet.")
     if batch_reads:
-        block_requests, packed = batch_carel_read_items(device, packed)
+        block_requests, block_mappings, packed = batch_carel_read_items(device, packed)
         device.requests.extend(block_requests)
+        project.mappings.extend(block_mappings)
     else:
         device.requests.extend(item.request for item in packed if item.request is not None)
     project.mappings.extend(item.mapping for item in packed if item.mapping is not None)
