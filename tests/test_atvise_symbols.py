@@ -63,6 +63,13 @@ def test_can_include_disabled_mapping_explicitly():
     assert "sym-Hidden=IR1025," in export_atvise_symbols(project, include_disabled=True)
 
 
+def test_semantic_symbol_datatype_can_differ_from_raw_server_tag():
+    mapping = _mapping("Temperature", 1025, "holding_register", "uint16")
+    mapping.count = 2
+    mapping.symbol_data_type = "float32"
+    assert "sym-Temperature=HRR1025," in export_atvise_symbols(Project(mappings=[mapping]))
+
+
 @pytest.mark.parametrize(
     ("register_type", "data_type"),
     [
