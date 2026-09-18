@@ -306,7 +306,7 @@ def _generate_from_imported(project: Project) -> GeneratedUci:
         "enabled": _on(project.tcp_server.enabled),
     }
 
-    for m in project.mappings:
+    for m in (mapping for mapping in project.mappings if mapping.deploy):
         key = (m.device, m.request)
         if m.device not in device_ids or key not in request_ids:
             raise ValueError(f"Mapping {m.name!r} references unresolved source {m.device}/{m.request}")
@@ -318,7 +318,9 @@ def _generate_from_imported(project: Project) -> GeneratedUci:
         else:
             server_repl[("tag", m.source_id)] = opts
 
-    current_mapping_ids = {m.source_id for m in project.mappings if m.source_id is not None}
+    current_mapping_ids = {
+        m.source_id for m in project.mappings if m.deploy and m.source_id is not None
+    }
     for m in baseline.mappings:
         if m.source_id not in current_mapping_ids:
             server_del.add(("tag", str(m.source_id)))
@@ -380,7 +382,7 @@ def _generate_fresh(project: Project) -> GeneratedUci:
         "\toption broadcasts '0'", f"\toption device_id {_q(t.device_id)}",
         f"\toption enabled {_q(_on(t.enabled))}", "",
     ]
-    for tid, m in enumerate(project.mappings, start=1):
+    for tid, m in enumerate((mapping for mapping in project.mappings if mapping.deploy), start=1):
         server.extend(_mapping_section(tid, m, device_ids[m.device], request_ids[(m.device, m.request)]).splitlines() + [""])
     return GeneratedUci("\n".join(client).rstrip() + "\n", "\n".join(server).rstrip() + "\n")
 
