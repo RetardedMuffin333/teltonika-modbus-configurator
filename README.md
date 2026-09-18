@@ -214,6 +214,15 @@ server width:    2 registers
 
 A real 597-symbol atvise file was used during v0.5 acceptance testing; all entries became importable after HRD verification.
 
+The import preview offers the same two read modes as register-table import:
+
+- **Batched (recommended):** shared FC03/FC04 blocks up to 100 registers and
+  FC01/FC02 blocks up to 1000 bits. One physical TCP Server mapping is created
+  per block; individual names and datatypes remain available for `.Symbol`
+  export.
+- **Register by register:** one client request and one TCP Server mapping per
+  imported symbol.
+
 ## Selective import and compact server blocks
 
 Source registers may be sparse, but imported TCP Server mappings are compacted independently per Modbus address space. This avoids atvise Connect block reads across unmapped gaps.
