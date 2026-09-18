@@ -28,7 +28,7 @@ class AtviseSymbolExportError(ValueError):
 
 def _prefix_for_mapping(mapping: ServerMapping) -> str:
     register_type = mapping.register_type
-    data_type = mapping.data_type
+    data_type = mapping.symbol_data_type or mapping.data_type
 
     if register_type == "coil":
         return "DA"
