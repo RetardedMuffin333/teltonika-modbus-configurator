@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from .models import FunctionCode, Project, Request, permissions_for_function
+from .register_allocator import register_value_width
 
 TELTONIKA_TCP_REGISTER_MIN = 1025
 TELTONIKA_TCP_REGISTER_MAX = 65536
@@ -110,12 +111,21 @@ def validate_project(project: Project) -> list[ValidationMessage]:
             messages.append(ValidationMessage("error", f"{mapping.name}: unsupported TCP data_type '{mapping.data_type}'"))
         if mapping.count < 1:
             messages.append(ValidationMessage("error", f"{mapping.name}: TCP mapping count must be at least 1"))
+        if mapping.source_offset < 0:
+            messages.append(ValidationMessage("error", f"{mapping.name}: source offset cannot be negative"))
         expected_type = FUNCTION_REGISTER_TYPES[request.function]
         if mapping.register_type != expected_type:
             messages.append(ValidationMessage("error", f"{mapping.name}: {mapping.register_type} does not match FC{int(request.function):02d} source ({expected_type})"))
         expected_access = permissions_for_function(request.function)
         if mapping.permissions != expected_access:
             messages.append(ValidationMessage("error", f"{mapping.name}: access is automatic for FC{int(request.function):02d} and must be '{expected_access}'"))
+        source_width = request.count * register_value_width(request.data_type, expected_type)
+        mapping_source_width = mapping.count * register_value_width(mapping.data_type, mapping.register_type)
+        if mapping.enabled and mapping.source_offset + mapping_source_width > source_width:
+            messages.append(ValidationMessage(
+                "error",
+                f"{mapping.name}: source offset/range exceeds request {mapping.request!r} width {source_width}",
+            ))
 
         end = mapping.register + mapping.count - 1
         if not TELTONIKA_TCP_REGISTER_MIN <= mapping.register <= TELTONIKA_TCP_REGISTER_MAX:
