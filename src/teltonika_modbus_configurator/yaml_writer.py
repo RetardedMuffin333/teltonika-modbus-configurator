@@ -83,6 +83,7 @@ def project_to_dict(project: Project) -> dict:
                 "data_type": m.data_type,
                 "count": m.count,
                 **({"source_offset": m.source_offset} if m.source_offset else {}),
+                **({"symbol_data_type": m.symbol_data_type} if m.symbol_data_type else {}),
                 **({"source_id": m.source_id} if m.source_id is not None else {}),
             }
             for m in project.mappings
