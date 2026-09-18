@@ -95,7 +95,7 @@ def _mapping_options(mapping, source_device_id: int | str, source_request_id: in
         "tag_name": mapping.name,
         "tag_source": "modbus_client",
         "tag_permissions": mapping.permissions,
-        "tag_start": "0",
+        "tag_start": str(mapping.source_offset),
         "modbus_reg_num": str(mapping.register),
         "modbus_type": REGISTER_TYPES[mapping.register_type],
         "tag_id": f"{source_device_id}.{source_request_id}",
