@@ -37,6 +37,13 @@ _AREA_MAP = {
     "inputregister": (FunctionCode.READ_INPUT_REGISTERS, "input_register"), "inputregisters": (FunctionCode.READ_INPUT_REGISTERS, "input_register"), "ir": (FunctionCode.READ_INPUT_REGISTERS, "input_register"),
 }
 
+_BATCH_LIMIT = {
+    FunctionCode.READ_HOLDING_REGISTERS: 100,
+    FunctionCode.READ_INPUT_REGISTERS: 100,
+    FunctionCode.READ_COILS: 1000,
+    FunctionCode.READ_DISCRETE_INPUTS: 1000,
+}
+
 
 def _key(value: str) -> str:
     return "".join(ch for ch in value.lower() if ch.isalnum())
@@ -100,6 +107,91 @@ def repack_carel_import_items(project: Project, items: list[CarelPlannedItem], *
     return packed
 
 
+def _unique_request_name(device, base: str, reserved: set[str]) -> str:
+    used = {request.name for request in device.requests} | reserved
+    if base not in used:
+        reserved.add(base)
+        return base
+    ordinal = 2
+    while f"{base}_{ordinal}" in used:
+        ordinal += 1
+    name = f"{base}_{ordinal}"
+    reserved.add(name)
+    return name
+
+
+def batch_carel_read_items(
+    device,
+    items: list[CarelPlannedItem],
+) -> tuple[list[Request], list[CarelPlannedItem]]:
+    """Replace typed one-value reads with bounded raw read blocks.
+
+    Individual TCP Server tags keep their original names, datatypes and server
+    addresses. ``source_offset`` selects the value inside the shared request via
+    RutOS ``tag_start``.
+    """
+    groups: dict[FunctionCode, list[CarelPlannedItem]] = {}
+    for item in items:
+        if item.request is None or item.mapping is None or not item.request.function.is_read:
+            continue
+        groups.setdefault(item.request.function, []).append(item)
+
+    requests: list[Request] = []
+    converted: list[CarelPlannedItem] = []
+    reserved: set[str] = set()
+    for function, group in groups.items():
+        register_type = group[0].mapping.register_type
+        limit = _BATCH_LIMIT[function]
+        ordered = sorted(group, key=lambda item: item.request.register)
+        blocks: list[list[CarelPlannedItem]] = []
+        current: list[CarelPlannedItem] = []
+        block_start = 0
+        block_end = -1
+        for item in ordered:
+            width = register_value_width(item.request.data_type, register_type)
+            item_start = item.request.register
+            item_end = item_start + width - 1
+            if current and item_end - block_start + 1 > limit:
+                blocks.append(current)
+                current = []
+            if not current:
+                block_start = item_start
+                block_end = item_end
+            else:
+                block_end = max(block_end, item_end)
+            current.append(item)
+        if current:
+            blocks.append(current)
+
+        for ordinal, block in enumerate(blocks, start=1):
+            start = min(item.request.register for item in block)
+            end = max(
+                item.request.register + register_value_width(item.request.data_type, register_type) - 1
+                for item in block
+            )
+            raw_type = "bool" if register_type in {"coil", "discrete_input"} else "uint16"
+            byte_order = "none" if raw_type == "bool" else "high_byte_first"
+            name = _unique_request_name(device, f"Batch_FC{int(function):02d}_{start}_{end}", reserved)
+            request = Request(
+                name=name,
+                function=function,
+                register=start,
+                count=end - start + 1,
+                data_type=raw_type,
+                byte_order=byte_order,
+                enabled=True,
+            )
+            requests.append(request)
+            for item in block:
+                mapping = replace(
+                    item.mapping,
+                    request=name,
+                    source_offset=item.request.register - start,
+                )
+                converted.append(replace(item, request=request, mapping=mapping, status="Ready (batched)"))
+    return requests, converted
+
+
 def apply_carel_import_plan(
     project: Project,
     items: list[CarelPlannedItem],
@@ -108,6 +200,7 @@ def apply_carel_import_plan(
     mapping_start: int = 1025,
     create_write_companions: bool = False,
     write_mapping_start: int = CAREL_AUTO_WRITE_START,
+    batch_reads: bool = False,
 ) -> tuple[int, int]:
     """Apply selected rows and optionally create write companions for ReadWrite values.
 
@@ -120,7 +213,13 @@ def apply_carel_import_plan(
         raise ValueError(f"Modbus TCP client {tcp_device_name!r} does not exist.")
     ready = [item for item in items if item.request is not None and item.mapping is not None]
     packed = repack_carel_import_items(project, ready, mapping_start=mapping_start)
-    device.requests.extend(item.request for item in packed if item.request is not None)
+    if batch_reads and create_write_companions:
+        raise ValueError("Batched reads and automatic SCADA write companions cannot be combined yet.")
+    if batch_reads:
+        block_requests, packed = batch_carel_read_items(device, packed)
+        device.requests.extend(block_requests)
+    else:
+        device.requests.extend(item.request for item in packed if item.request is not None)
     project.mappings.extend(item.mapping for item in packed if item.mapping is not None)
 
     write_count = 0
