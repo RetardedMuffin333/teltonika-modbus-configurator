@@ -162,16 +162,21 @@ def test_batched_carel_reads_share_requests_and_use_tag_offsets():
     assert mappings["Setpoint"].source_offset == 10
     assert (mappings["Temperature_A"].data_type, mappings["Temperature_A"].count) == ("uint16", 2)
     assert mappings["Temperature_A"].symbol_data_type == "float32"
+    assert mappings["Temperature_A"].deploy is False
+    block = mappings["Batch_FC03_10_20"]
+    assert (block.register, block.count, block.deploy, block.export_symbol) == (1025, 11, True, False)
 
     generated = generate_uci(project)
     assert "option data_type '16bit_uint_hi_first'" in generated.modbus_client
     assert "option reg_count '11'" in generated.modbus_client
-    assert "option tag_start '2'" in generated.modbus_server
+    assert generated.modbus_server.count("config tag ") == 1
+    assert "option tag_start '0'" in generated.modbus_server
     assert "option tag_type 'uint16'" in generated.modbus_server
-    assert "option tag_count '2'" in generated.modbus_server
+    assert "option tag_count '11'" in generated.modbus_server
     symbols = export_atvise_symbols(project)
     assert "sym-Temperature_A=HRR1025," in symbols
     assert "sym-Temperature_B=HRR1027," in symbols
+    assert "Batch_FC03" not in symbols
 
 
 def test_batched_carel_reads_split_before_100_register_limit():
