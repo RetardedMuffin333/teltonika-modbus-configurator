@@ -5,6 +5,7 @@ from teltonika_modbus_configurator.carel_convert import (
 )
 from teltonika_modbus_configurator.carel_import import CarelImportRow
 from teltonika_modbus_configurator.models import FunctionCode, Project, TcpClientDevice
+from teltonika_modbus_configurator.uci_generator import generate_uci
 
 
 def _project():
@@ -132,3 +133,47 @@ def test_unsupported_datatype_is_skipped_not_guessed():
     plan = build_carel_import_plan(project, rows, tcp_device_name="Carel")
     assert plan[0].request is None
     assert "unsupported datatype" in plan[0].status
+
+
+def test_batched_carel_reads_share_requests_and_use_tag_offsets():
+    project = _project()
+    rows = [
+        CarelImportRow("Documentation", 2, "Temperature_A", "10", "HoldingRegister", "2", "Real", "Read"),
+        CarelImportRow("Documentation", 3, "Temperature_B", "12", "HoldingRegister", "2", "Real", "Read"),
+        CarelImportRow("Documentation", 4, "Setpoint", "20", "HoldingRegister", "1", "UInt", "Read"),
+    ]
+    plan = build_carel_import_plan(project, rows, tcp_device_name="Carel", add_one_to_index=False)
+
+    read_count, write_count = apply_carel_import_plan(
+        project,
+        plan,
+        tcp_device_name="Carel",
+        batch_reads=True,
+    )
+
+    assert (read_count, write_count) == (3, 0)
+    assert len(project.tcp_clients[0].requests) == 1
+    request = project.tcp_clients[0].requests[0]
+    assert (request.register, request.count, request.data_type) == (10, 11, "uint16")
+    mappings = {mapping.name: mapping for mapping in project.mappings}
+    assert mappings["Temperature_A"].source_offset == 0
+    assert mappings["Temperature_B"].source_offset == 2
+    assert mappings["Setpoint"].source_offset == 10
+
+    generated = generate_uci(project)
+    assert "option reg_count '11'" in generated.modbus_client
+    assert "option tag_start '2'" in generated.modbus_server
+    assert "option tag_start '10'" in generated.modbus_server
+
+
+def test_batched_carel_reads_split_before_100_register_limit():
+    project = _project()
+    rows = [
+        CarelImportRow("Documentation", 2, "A", "0", "HoldingRegister", "2", "Real", "Read"),
+        CarelImportRow("Documentation", 3, "B", "99", "HoldingRegister", "2", "Real", "Read"),
+    ]
+    plan = build_carel_import_plan(project, rows, tcp_device_name="Carel", add_one_to_index=False)
+
+    apply_carel_import_plan(project, plan, tcp_device_name="Carel", batch_reads=True)
+
+    assert [(request.register, request.count) for request in project.tcp_clients[0].requests] == [(0, 2), (99, 2)]
