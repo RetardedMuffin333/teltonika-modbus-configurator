@@ -86,7 +86,10 @@ def export_atvise_symbols(project: Project, *, include_disabled: bool = False) -
     are not expected to be available through the RutOS Modbus TCP Server.
     """
 
-    mappings = [m for m in project.mappings if include_disabled or m.enabled]
+    mappings = [
+        m for m in project.mappings
+        if m.export_symbol and (include_disabled or m.enabled)
+    ]
     lines = ["[]"]
     lines.extend(_symbol_line(mapping) for mapping in mappings)
     return "\n".join(lines) + "\n"
