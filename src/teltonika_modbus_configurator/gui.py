@@ -9,6 +9,13 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from .deploy import SshSession, read_remote_config
 from .loader import load_project
+from .mapping_lifecycle import (
+    deployed_mappings_for_device,
+    deployed_mappings_for_request,
+    remove_server_mappings,
+    remove_symbol_aliases_for_device,
+    remove_symbol_aliases_for_requests,
+)
 from .models import Device, FunctionCode, Project, Request, SerialConnection, ServerMapping
 from .uci_generator import generate_uci
 from .uci_parser import import_project
@@ -454,8 +461,9 @@ class ProjectEditor(tk.Tk):
         i = self.selected_device_index()
         if i is None: return
         name = self.project.devices[i].name
-        if any(m.device == name for m in self.project.mappings):
+        if deployed_mappings_for_device(self.project, device_name=name):
             messagebox.showerror("Cannot delete", "Device is still referenced by TCP mappings."); return
+        remove_symbol_aliases_for_device(self.project, device_name=name)
         del self.project.devices[i]; self.mark_dirty(); self.refresh_all()
 
     def _request_dialog(self, initial=None):
@@ -493,8 +501,9 @@ class ProjectEditor(tk.Tk):
         di = self.selected_device_index(); sel = self.requests_tree.selection()
         if di is None or not sel: return
         ri = int(sel[0]); d = self.project.devices[di]; name = d.requests[ri].name
-        if any(m.device == d.name and m.request == name for m in self.project.mappings):
+        if deployed_mappings_for_request(self.project, device_name=d.name, request_name=name):
             messagebox.showerror("Cannot delete", "Request is still referenced by TCP mappings."); return
+        remove_symbol_aliases_for_requests(self.project, device_name=d.name, request_names={name})
         del d.requests[ri]; self.mark_dirty(); self.refresh_requests()
 
     def _mapping_dialog(self, initial=None):
@@ -525,7 +534,7 @@ class ProjectEditor(tk.Tk):
     def delete_mapping(self):
         sel = self.mappings_tree.selection()
         if not sel: return
-        del self.project.mappings[int(sel[0])]; self.mark_dirty(); self.refresh_mappings()
+        remove_server_mappings(self.project, [int(sel[0])]); self.mark_dirty(); self.refresh_mappings()
 
     def apply_tcp_settings(self):
         try:
