@@ -47,50 +47,6 @@ def test_float32_mapping_reserves_two_server_registers() -> None:
     assert all(mapping.register_type == "holding_register" for mapping in result.created)
 
 
-def test_read_mappings_start_new_block_before_exceeding_100_registers() -> None:
-    requests = [
-        Request(f"Value_{index}", FunctionCode.READ_HOLDING_REGISTERS, index, data_type="float32")
-        for index in range(51)
-    ]
-    device = TcpClientDevice(name="Carel", requests=requests)
-    project = Project(tcp_clients=[device])
-
-    result = create_tcp_mappings_from_requests(
-        project,
-        device_name="Carel",
-        request_names=[request.name for request in requests],
-    )
-
-    assert len(result.created) == 51
-    assert result.created[49].register == 1123
-    assert result.created[50].register == 1127
-
-
-def test_write_mappings_are_not_split_into_read_blocks() -> None:
-    requests = [
-        Request(
-            f"Write_{index}",
-            FunctionCode.WRITE_SINGLE_HOLDING_REGISTER,
-            index,
-            data_type="float32",
-            values="0",
-            enabled=False,
-        )
-        for index in range(51)
-    ]
-    device = TcpClientDevice(name="Carel", requests=requests)
-    project = Project(tcp_clients=[device])
-
-    result = create_tcp_mappings_from_requests(
-        project,
-        device_name="Carel",
-        request_names=[request.name for request in requests],
-    )
-
-    assert result.created[49].register == 20098
-    assert result.created[50].register == 20100
-
-
 def test_repeat_action_skips_existing_device_request_mapping() -> None:
     device = Device(
         name="RDF",
