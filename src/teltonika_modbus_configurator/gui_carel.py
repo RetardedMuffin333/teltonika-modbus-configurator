@@ -168,6 +168,13 @@ class CarelPreviewWindow(tk.Toplevel):
             variable=self.write_companions_var,
         ).grid(row=1, column=0, columnspan=6, padx=6, pady=(0, 6), sticky="w")
 
+        self.batch_reads_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            options,
+            text="Batch read requests (experimental: FC03/FC04 up to 100 registers, FC01/FC02 up to 1000 bits)",
+            variable=self.batch_reads_var,
+        ).grid(row=2, column=0, columnspan=6, padx=6, pady=(0, 6), sticky="w")
+
         filters = ttk.Frame(self); filters.pack(fill="x", padx=10, pady=(0, 5))
         ttk.Label(filters, text="Modbus type:").pack(side="left")
         self.area_var = tk.StringVar(value="All")
@@ -259,6 +266,8 @@ class CarelPreviewWindow(tk.Toplevel):
         if not selected_items:
             messagebox.showwarning("Carel import", "Select at least one ready row to import.", parent=self); return
         extra = "\nSCADA write companions will also be created for selected ReadWrite Coil/HoldingRegister rows." if self.write_companions_var.get() else ""
+        if self.batch_reads_var.get():
+            extra += "\nSelected reads will share bounded block requests using RutOS tag offsets."
         if not messagebox.askyesno(
             "Carel import",
             f"Import {len(selected_items)} selected Carel variables into {self.device_var.get()}?\n\n"
@@ -270,6 +279,7 @@ class CarelPreviewWindow(tk.Toplevel):
             read_count, write_count = apply_carel_import_plan(
                 self.parent.project, selected_items, tcp_device_name=self.device_var.get(),
                 mapping_start=int(self.start_var.get()), create_write_companions=self.write_companions_var.get(),
+                batch_reads=self.batch_reads_var.get(),
             )
         except Exception as exc:
             messagebox.showerror("Carel import", str(exc), parent=self); return
