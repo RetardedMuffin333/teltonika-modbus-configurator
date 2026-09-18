@@ -5,6 +5,7 @@ from teltonika_modbus_configurator.carel_convert import (
 )
 from teltonika_modbus_configurator.carel_import import CarelImportRow
 from teltonika_modbus_configurator.models import FunctionCode, Project, TcpClientDevice
+from teltonika_modbus_configurator.atvise_symbols import export_atvise_symbols
 from teltonika_modbus_configurator.uci_generator import generate_uci
 
 
@@ -152,19 +153,25 @@ def test_batched_carel_reads_share_requests_and_use_tag_offsets():
     )
 
     assert (read_count, write_count) == (3, 0)
-    assert len(project.tcp_clients[0].requests) == 2
-    requests = sorted(project.tcp_clients[0].requests, key=lambda request: request.register)
-    assert (requests[0].register, requests[0].count, requests[0].data_type) == (10, 2, "float32")
-    assert (requests[1].register, requests[1].count, requests[1].data_type) == (20, 1, "uint16")
+    assert len(project.tcp_clients[0].requests) == 1
+    request = project.tcp_clients[0].requests[0]
+    assert (request.register, request.count, request.data_type) == (10, 11, "uint16")
     mappings = {mapping.name: mapping for mapping in project.mappings}
     assert mappings["Temperature_A"].source_offset == 0
-    assert mappings["Temperature_B"].source_offset == 1
-    assert mappings["Setpoint"].source_offset == 0
+    assert mappings["Temperature_B"].source_offset == 2
+    assert mappings["Setpoint"].source_offset == 10
+    assert (mappings["Temperature_A"].data_type, mappings["Temperature_A"].count) == ("uint16", 2)
+    assert mappings["Temperature_A"].symbol_data_type == "float32"
 
     generated = generate_uci(project)
-    assert "option data_type '32bit_float1234'" in generated.modbus_client
-    assert "option reg_count '2'" in generated.modbus_client
-    assert "option tag_start '1'" in generated.modbus_server
+    assert "option data_type '16bit_uint_hi_first'" in generated.modbus_client
+    assert "option reg_count '11'" in generated.modbus_client
+    assert "option tag_start '2'" in generated.modbus_server
+    assert "option tag_type 'uint16'" in generated.modbus_server
+    assert "option tag_count '2'" in generated.modbus_server
+    symbols = export_atvise_symbols(project)
+    assert "sym-Temperature_A=HRR1025," in symbols
+    assert "sym-Temperature_B=HRR1027," in symbols
 
 
 def test_batched_carel_reads_split_before_100_register_limit():
@@ -177,4 +184,4 @@ def test_batched_carel_reads_split_before_100_register_limit():
 
     apply_carel_import_plan(project, plan, tcp_device_name="Carel", batch_reads=True)
 
-    assert [(request.register, request.count) for request in project.tcp_clients[0].requests] == [(0, 1), (99, 1)]
+    assert [(request.register, request.count) for request in project.tcp_clients[0].requests] == [(0, 2), (99, 2)]
