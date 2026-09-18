@@ -10,6 +10,12 @@ from .atvise_symbols import export_atvise_symbols
 from .gui import FormDialog, vars_for
 from .gui_bulk import BulkGeneratorWindow
 from .gui_deploy import DeploymentEditor
+from .mapping_lifecycle import (
+    deployed_mappings_for_device,
+    deployed_mappings_for_request,
+    remove_symbol_aliases_for_device,
+    remove_symbol_aliases_for_requests,
+)
 from .models import FunctionCode, Request, ServerMapping, TcpClientDevice, permissions_for_function
 
 FUNCTION_CHOICES = (
@@ -179,8 +185,9 @@ class ExtendedProjectEditor(DeploymentEditor):
         i = self.selected_tcp_client_index()
         if i is None: return
         name = self.project.tcp_clients[i].name
-        if any(m.device == name for m in self.project.mappings):
+        if deployed_mappings_for_device(self.project, device_name=name):
             messagebox.showerror("TCP client in use", "Delete TCP mappings that reference this client first.", parent=self); return
+        remove_symbol_aliases_for_device(self.project, device_name=name)
         del self.project.tcp_clients[i]
         self.mark_dirty(); self.refresh_all()
 
@@ -277,8 +284,9 @@ class ExtendedProjectEditor(DeploymentEditor):
         di = self.selected_tcp_client_index(); sel = self.tcp_client_requests_tree.selection()
         if di is None or not sel: return
         ri = int(sel[0]); source = self.project.tcp_clients[di]; name = source.requests[ri].name
-        if any(m.device == source.name and m.request == name for m in self.project.mappings):
+        if deployed_mappings_for_request(self.project, device_name=source.name, request_name=name):
             messagebox.showerror("Request in use", "Delete TCP mappings that reference this request first.", parent=self); return
+        remove_symbol_aliases_for_requests(self.project, device_name=source.name, request_names={name})
         del source.requests[ri]
         self.mark_dirty(); self.refresh_tcp_client_requests()
 
