@@ -13,8 +13,9 @@ class V08ProjectEditor(V06ProjectEditor):
     def _build_menu(self):
         super()._build_menu()
         menu = self.nametowidget(self.cget("menu"))
-        file_menu_name = menu.entrycget(0, "menu")
-        file_menu = menu.nametowidget(file_menu_name)
+        file_menu = self._find_submenu(menu, "File")
+        if file_menu is None:
+            raise RuntimeError("The File menu could not be found.")
         file_menu.insert_command(1, label="First Project Wizard...", command=self.open_first_project_wizard)
         file_menu.insert_separator(2)
 
