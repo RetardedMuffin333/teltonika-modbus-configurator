@@ -10,6 +10,7 @@ from .models import Device, FunctionCode, Request, SerialConnection, TcpClientDe
 
 
 READ_FUNCTIONS = {1, 2, 3, 4}
+WRITE_FUNCTIONS = {5, 6, 15, 16}
 
 
 @dataclass(slots=True)
@@ -109,6 +110,11 @@ def read_targets_for_device(targets: list[LiveTestTarget], template: LiveTestTar
     ]
 
 
+def write_targets(targets: list[LiveTestTarget]) -> list[LiveTestTarget]:
+    """Return configured FC05/06/15/16 requests, including disabled SCADA commands."""
+    return [target for target in targets if int(target.request.function) in WRITE_FUNCTIONS]
+
+
 def make_adhoc_target(
     template: LiveTestTarget,
     *,
@@ -136,6 +142,48 @@ def make_adhoc_target(
         data_type=data_type,
         byte_order=byte_order,
         enabled=True,
+    )
+    return replace(template, request=request)
+
+
+def make_adhoc_write_target(
+    template: LiveTestTarget,
+    *,
+    function: int,
+    register: int,
+    values: str,
+    data_type: str,
+    byte_order: str,
+) -> LiveTestTarget:
+    """Build a temporary write target while inheriting the real transport."""
+    if function not in WRITE_FUNCTIONS:
+        raise ValueError("Ad-hoc write testing supports FC05, FC06, FC15, and FC16 only")
+    if register < 0:
+        raise ValueError("Register must be 0 or greater")
+    values = " ".join(str(values).split())
+    if not values:
+        raise ValueError("A write value is required")
+    parts = values.split()
+    if function in {5, 6} and len(parts) != 1:
+        raise ValueError(f"FC{function:02d} accepts exactly one value")
+    if function in {5, 15}:
+        if any(value.lower() not in {"0", "1", "false", "true"} for value in parts):
+            raise ValueError(f"FC{function:02d} coil values must be 0/1 or false/true")
+        parts = ["1" if value.lower() in {"1", "true"} else "0" for value in parts]
+        values = " ".join(parts)
+        data_type = "bool"
+        byte_order = "none"
+    if function == 6 and data_type in {"int32", "uint32", "float32"}:
+        raise ValueError("FC06 cannot write a 32-bit value; use FC16")
+    request = Request(
+        name="Ad-hoc write",
+        function=FunctionCode(function),
+        register=register,
+        count=1,
+        data_type=data_type,
+        byte_order=byte_order,
+        enabled=False,
+        values=values,
     )
     return replace(template, request=request)
 
