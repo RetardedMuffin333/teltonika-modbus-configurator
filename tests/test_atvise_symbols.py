@@ -35,6 +35,7 @@ def test_exports_verified_atvise_prefixes():
 
     assert export_atvise_symbols(project) == (
         "[]\n"
+        "[D1]\n"
         "sym-Status_Temp=IR1025,\n"
         "sym-Cmd_Setpoint=HR1080,\n"
         "sym-Door=DI1100,\n"
@@ -74,6 +75,47 @@ def test_physical_block_mapping_can_be_excluded_from_symbol_export():
     mapping = _mapping("Batch", 1025, "holding_register", "uint16")
     mapping.export_symbol = False
     assert export_atvise_symbols(Project(mappings=[mapping])) == "[]\n"
+
+
+def test_groups_symbols_by_source_device_and_supports_custom_group_names():
+    from teltonika_modbus_configurator.models import Device
+
+    project = Project(
+        devices=[
+            Device("Boiler", 1, "RS485", symbol_group="Plant_room"),
+            Device("Heating", 2, "RS485"),
+        ],
+        mappings=[
+            ServerMapping("BoilerTemp", "Boiler", "R1", 1025, "holding_register"),
+            ServerMapping("RoomTemp", "Heating", "R1", 1026, "holding_register"),
+            ServerMapping("BoilerSetpoint", "Boiler", "R2", 1027, "holding_register"),
+        ],
+    )
+
+    assert export_atvise_symbols(project) == (
+        "[]\n"
+        "[Plant_room]\n"
+        "sym-BoilerTemp=HR1025,\n"
+        "sym-BoilerSetpoint=HR1027,\n"
+        "[Heating]\n"
+        "sym-RoomTemp=HR1026,\n"
+    )
+
+
+def test_can_export_legacy_flat_symbol_file():
+    project = Project(mappings=[_mapping("Temperature", 1025, "holding_register")])
+    assert export_atvise_symbols(project, group_by_device=False) == "[]\nsym-Temperature=HR1025,\n"
+
+
+def test_rejects_unsafe_symbol_group():
+    from teltonika_modbus_configurator.models import Device
+
+    project = Project(
+        devices=[Device("D1", 1, "RS485", symbol_group="Bad[group")],
+        mappings=[_mapping("Temperature", 1025, "holding_register")],
+    )
+    with pytest.raises(AtviseSymbolExportError, match="unsafe"):
+        export_atvise_symbols(project)
 
 
 @pytest.mark.parametrize(

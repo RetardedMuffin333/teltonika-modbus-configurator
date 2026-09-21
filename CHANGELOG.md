@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Live Modbus write testing for configured and ad-hoc FC05/FC06/FC15/FC16 commands with explicit `WRITE` confirmation.
 - RutOS-compatible dropdowns for serial device, baudrate, data bits, parity, and stop bits.
 - Editable common-value dropdown suggestions for TCP port, Unit ID, polling period, and timeout.
+- atvise `.Symbol` export grouped into editable per-source-device folders, defaulting to the source device name.
 
 ## [0.7.0] - 2026-09-21
 

@@ -51,6 +51,7 @@ def project_to_dict(project: Project) -> dict:
                 "period": d.period,
                 "timeout": d.timeout,
                 "enabled": d.enabled,
+                **({"symbol_group": d.symbol_group} if d.symbol_group else {}),
                 **({"source_id": d.source_id} if d.source_id is not None else {}),
                 "requests": [_request_dict(r) for r in d.requests],
             }
@@ -65,6 +66,7 @@ def project_to_dict(project: Project) -> dict:
                 "period": d.period,
                 "timeout": d.timeout,
                 "enabled": d.enabled,
+                **({"symbol_group": d.symbol_group} if d.symbol_group else {}),
                 **({"source_id": d.source_id} if d.source_id is not None else {}),
                 **({"raw_options": dict(d.raw_options)} if d.raw_options else {}),
                 "requests": [_request_dict(r) for r in d.requests],

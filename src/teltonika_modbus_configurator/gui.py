@@ -436,6 +436,7 @@ class ProjectEditor(tk.Tk):
         choices = tuple(c.name for c in self.project.connections) or ("",)
         dlg = FormDialog(self, "Device", [
             ("name", "Name", "text", None), ("slave_id", "Slave ID", "text", None),
+            ("symbol_group", "atvise symbol group", "text", None),
             ("connection", "Connection", "choice", choices), ("period", "Period", "text", None),
             ("timeout", "Timeout", "text", None), ("enabled", "Enabled", "bool", None),
         ], initial)
@@ -444,9 +445,9 @@ class ProjectEditor(tk.Tk):
     def add_device(self):
         if not self.project.connections:
             messagebox.showerror("No connection", "Create a serial connection first."); return
-        v = self._device_dialog({"slave_id": 1, "connection": self.project.connections[0].name, "period": 10, "timeout": 1, "enabled": True})
+        v = self._device_dialog({"slave_id": 1, "symbol_group": "", "connection": self.project.connections[0].name, "period": 10, "timeout": 1, "enabled": True})
         if not v: return
-        self.project.devices.append(Device(v["name"], int(v["slave_id"]), v["connection"], int(v["period"]), int(v["timeout"]), bool(v["enabled"]), []))
+        self.project.devices.append(Device(v["name"], int(v["slave_id"]), v["connection"], int(v["period"]), int(v["timeout"]), bool(v["enabled"]), [], symbol_group=v["symbol_group"].strip() or None))
         self.mark_dirty(); self.refresh_all()
 
     def edit_device(self):
@@ -456,6 +457,7 @@ class ProjectEditor(tk.Tk):
         if not v: return
         old = d.name
         d.name, d.slave_id, d.connection, d.period, d.timeout, d.enabled = v["name"], int(v["slave_id"]), v["connection"], int(v["period"]), int(v["timeout"]), bool(v["enabled"])
+        d.symbol_group = v["symbol_group"].strip() or None
         if old != d.name:
             for m in self.project.mappings:
                 if m.device == old: m.device = d.name
