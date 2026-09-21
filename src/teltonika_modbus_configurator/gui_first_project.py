@@ -125,7 +125,7 @@ class FirstProjectWizard(tk.Toplevel):
             ttk.Radiobutton(next_box, text=text, value=value, variable=self.vars["next_action"]).pack(anchor="w", pady=2)
         return page
 
-    def _options(self):
+    def _collect_options(self):
         try:
             return FirstProjectOptions(
                 project_type=self.vars["project_type"].get(),
@@ -147,7 +147,7 @@ class FirstProjectWizard(tk.Toplevel):
 
     def _refresh_summary(self):
         try:
-            options = self._options()
+            options = self._collect_options()
             project = build_first_project(options)
             details = [
                 f"Project type: {options.project_type.upper()}",
@@ -192,7 +192,7 @@ class FirstProjectWizard(tk.Toplevel):
 
     def _next(self):
         try:
-            options = self._options()
+            options = self._collect_options()
         except ValueError as exc:
             messagebox.showerror("Invalid value", str(exc), parent=self)
             return
