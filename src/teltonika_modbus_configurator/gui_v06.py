@@ -6,7 +6,9 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog
 
 from .gui_live_test import LiveModbusTesterWindow
+from .gui_project_report import ProjectReportWindow
 from .gui_v05 import V05ProjectEditor
+from .project_report import render_project_report
 from .rutos_api import RutOSApiClient, execute_live_test
 
 
@@ -37,7 +39,17 @@ class V06ProjectEditor(V05ProjectEditor):
             menu.add_cascade(label="Tools", menu=tools)
         else:
             tools.add_separator()
+        tools.add_command(label="Project Report...", command=self.open_project_report)
         tools.add_command(label="Live Modbus Tester...", command=self.open_live_modbus_tester)
+
+    def open_project_report(self):
+        project_name = self.path.name if self.path is not None else "<unsaved>"
+        ProjectReportWindow(
+            self,
+            title=f"Project Report - {project_name}",
+            report=render_project_report(self.project, project_name=project_name),
+            suggested_name=f"{self.path.stem if self.path is not None else 'project'}-report.txt",
+        )
 
     def open_live_modbus_tester(self):
         host = simpledialog.askstring("RutOS API", "Gateway IP / hostname:", initialvalue="192.168.2.1", parent=self)
