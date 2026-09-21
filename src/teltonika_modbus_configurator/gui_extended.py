@@ -154,9 +154,9 @@ class ExtendedProjectEditor(DeploymentEditor):
 
     def _tcp_client_dialog(self, initial=None):
         dlg = FormDialog(self, "Modbus TCP Client", [
-            ("name", "Name", "text", None), ("host", "Host / IP", "text", None), ("port", "Port", "text", None),
-            ("unit_id", "Unit / Server ID", "text", None), ("period", "Polling period", "text", None),
-            ("timeout", "Timeout", "text", None), ("enabled", "Enabled", "bool", None),
+            ("name", "Name", "text", None), ("host", "Host / IP", "text", None), ("port", "Port", "suggestion", (502, 1502)),
+            ("unit_id", "Unit / Server ID", "suggestion", tuple(range(0, 11))), ("period", "Polling period", "suggestion", (1, 2, 5, 10, 30, 60)),
+            ("timeout", "Timeout", "suggestion", (1, 2, 5, 10, 30)), ("enabled", "Enabled", "bool", None),
         ], initial or {})
         return dlg.values
 
