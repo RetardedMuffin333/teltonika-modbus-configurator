@@ -50,9 +50,10 @@ class FirstProjectWizard(tk.Toplevel):
         self._show_page()
         parent.wait_window(self)
 
-    def _entry(self, parent, row, label, name, *, width=24):
+    def _entry(self, parent, row, label, name, *, width=24, choices=None, readonly=False):
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(0, 12), pady=5)
-        ttk.Entry(parent, textvariable=self.vars[name], width=width).grid(row=row, column=1, sticky="w", pady=5)
+        widget = ttk.Combobox(parent, textvariable=self.vars[name], values=choices, state="readonly" if readonly else "normal", width=width) if choices is not None else ttk.Entry(parent, textvariable=self.vars[name], width=width)
+        widget.grid(row=row, column=1, sticky="w", pady=5)
 
     def _type_page(self):
         page = ttk.Frame(self.body)
@@ -84,13 +85,14 @@ class FirstProjectWizard(tk.Toplevel):
         self.rtu_frame = ttk.LabelFrame(page, text="First RTU device", padding=10)
         self.rtu_frame.pack(fill="x", pady=(0, 10))
         rtu_fields = (
-            ("Connection name", "serial_name"), ("Device path", "serial_device"),
-            ("Baudrate", "baudrate"), ("Data bits", "databits"), ("Parity", "parity"),
-            ("Stop bits", "stopbits"), ("Device name", "rtu_device_name"),
-            ("Slave ID", "rtu_slave_id"), ("Period (s)", "rtu_period"), ("Timeout (s)", "rtu_timeout"),
+            ("Connection name", "serial_name", None, False), ("Device path", "serial_device", ("/dev/rs485", "/dev/rs232"), True),
+            ("Baudrate", "baudrate", (300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200), True),
+            ("Data bits", "databits", (5, 6, 7, 8), True), ("Parity", "parity", ("none", "even", "odd", "mark", "space"), True),
+            ("Stop bits", "stopbits", (1, 2), True), ("Device name", "rtu_device_name", None, False),
+            ("Slave ID", "rtu_slave_id", (1, 2, 10, 100, 247), False), ("Period (s)", "rtu_period", (1, 2, 5, 10, 30, 60), False), ("Timeout (s)", "rtu_timeout", (1, 2, 5, 10, 30), False),
         )
-        for row, (label, name) in enumerate(rtu_fields):
-            self._entry(self.rtu_frame, row // 2, label, name, width=18)
+        for row, (label, name, choices, readonly) in enumerate(rtu_fields):
+            self._entry(self.rtu_frame, row // 2, label, name, width=18, choices=choices, readonly=readonly)
             if row % 2:
                 widgets = self.rtu_frame.grid_slaves(row=row // 2)
                 widgets[0].grid_configure(column=3)
@@ -99,12 +101,12 @@ class FirstProjectWizard(tk.Toplevel):
         self.tcp_frame = ttk.LabelFrame(page, text="First TCP device", padding=10)
         self.tcp_frame.pack(fill="x")
         tcp_fields = (
-            ("Device name", "tcp_device_name"), ("Host / IP", "tcp_host"),
-            ("Port", "tcp_port"), ("Unit ID", "tcp_unit_id"),
-            ("Period (s)", "tcp_period"), ("Timeout (s)", "tcp_timeout"),
+            ("Device name", "tcp_device_name", None), ("Host / IP", "tcp_host", None),
+            ("Port", "tcp_port", (502, 1502)), ("Unit ID", "tcp_unit_id", (0, 1, 2, 10, 101, 247)),
+            ("Period (s)", "tcp_period", (1, 2, 5, 10, 30, 60)), ("Timeout (s)", "tcp_timeout", (1, 2, 5, 10, 30)),
         )
-        for row, (label, name) in enumerate(tcp_fields):
-            self._entry(self.tcp_frame, row // 2, label, name, width=18)
+        for row, (label, name, choices) in enumerate(tcp_fields):
+            self._entry(self.tcp_frame, row // 2, label, name, width=18, choices=choices, readonly=False)
             if row % 2:
                 widgets = self.tcp_frame.grid_slaves(row=row // 2)
                 widgets[0].grid_configure(column=3)
