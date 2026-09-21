@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
 from .live_test import (
     READ_FUNCTIONS,
     LiveTestTarget,
     device_templates,
     make_adhoc_target,
+    make_adhoc_write_target,
     project_test_targets,
     read_targets_for_device,
+    write_targets,
 )
 
 
@@ -23,6 +25,12 @@ FUNCTION_CHOICES = {
 }
 DATA_TYPES = ("int16", "uint16", "int32", "uint32", "float32")
 BYTE_ORDERS = ("high_byte_first", "low_byte_first", "1234", "2143", "3412", "4321")
+WRITE_FUNCTION_CHOICES = {
+    "FC05 Write Single Coil": 5,
+    "FC06 Write Single Register": 6,
+    "FC15 Write Multiple Coils": 15,
+    "FC16 Write Multiple Registers": 16,
+}
 
 
 class LiveModbusTesterWindow(tk.Toplevel):
@@ -32,6 +40,8 @@ class LiveModbusTesterWindow(tk.Toplevel):
         self.execute = execute
         self.targets = project_test_targets(project.devices, project.tcp_clients, project.connections)
         self.target_by_label = {target.summary: target for target in self.targets}
+        self.write_target_list = write_targets(self.targets)
+        self.write_target_by_label = {target.summary: target for target in self.write_target_list}
         self.templates = device_templates(self.targets)
         self.template_by_label = {target.device_summary: target for target in self.templates}
         self.scan_stop_requested = False
@@ -54,6 +64,7 @@ class LiveModbusTesterWindow(tk.Toplevel):
         notebook.pack(fill="both", expand=True)
         self._build_existing_tab(notebook)
         self._build_adhoc_tab(notebook)
+        self._build_write_tab(notebook)
         self._build_scan_tab(notebook)
 
     def _build_existing_tab(self, notebook):
@@ -175,6 +186,72 @@ class LiveModbusTesterWindow(tk.Toplevel):
         tab.columnconfigure(1, weight=1)
         tab.rowconfigure(2, weight=1)
 
+    def _build_write_tab(self, notebook):
+        tab = ttk.Frame(notebook, padding=12)
+        notebook.add(tab, text="Write Test")
+        warning = (
+            "DANGER: This sends a real Modbus command to the field device. "
+            "Confirm the register and value, make sure the equipment is safe, and use feedback/readback afterward."
+        )
+        ttk.Label(tab, text=warning, foreground="#b00020", wraplength=820, justify="left", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 12))
+
+        self.write_mode_var = tk.StringVar(value="existing")
+        ttk.Radiobutton(tab, text="Existing write request", value="existing", variable=self.write_mode_var, command=self._write_mode_changed).grid(row=1, column=0, sticky="w")
+        ttk.Radiobutton(tab, text="Ad-hoc write", value="adhoc", variable=self.write_mode_var, command=self._write_mode_changed).grid(row=1, column=1, sticky="w")
+
+        self.write_existing_var = tk.StringVar()
+        ttk.Label(tab, text="Project write request:").grid(row=2, column=0, sticky="w", pady=6)
+        self.write_existing_combo = ttk.Combobox(tab, textvariable=self.write_existing_var, values=[target.summary for target in self.write_target_list], state="readonly", width=62)
+        self.write_existing_combo.grid(row=2, column=1, columnspan=3, sticky="ew", pady=6)
+        self.write_existing_combo.bind("<<ComboboxSelected>>", lambda _event: self._existing_write_changed())
+        self.write_existing_values_var = tk.StringVar(value="0")
+        ttk.Label(tab, text="Test value(s):").grid(row=3, column=0, sticky="w", pady=6)
+        self.write_existing_values_entry = ttk.Entry(tab, textvariable=self.write_existing_values_var, width=34)
+        self.write_existing_values_entry.grid(row=3, column=1, sticky="w", pady=6)
+
+        self.write_device_var = tk.StringVar()
+        self.write_function_var = tk.StringVar(value="FC06 Write Single Register")
+        self.write_register_var = tk.StringVar(value="0")
+        self.write_values_var = tk.StringVar(value="0")
+        self.write_dtype_var = tk.StringVar(value="int16")
+        self.write_order_var = tk.StringVar(value="high_byte_first")
+        adhoc_fields = (
+            ("Target device", self.write_device_var, [target.device_summary for target in self.templates]),
+            ("Function", self.write_function_var, list(WRITE_FUNCTION_CHOICES)),
+            ("Register", self.write_register_var, None),
+            ("Value(s)", self.write_values_var, None),
+            ("Data type", self.write_dtype_var, DATA_TYPES),
+            ("Byte order", self.write_order_var, BYTE_ORDERS),
+        )
+        self.write_adhoc_widgets = []
+        for index, (label, variable, choices) in enumerate(adhoc_fields, start=4):
+            ttk.Label(tab, text=f"{label}:").grid(row=index, column=0, sticky="w", pady=5)
+            widget = ttk.Entry(tab, textvariable=variable, width=34) if choices is None else ttk.Combobox(tab, textvariable=variable, values=choices, state="readonly", width=31)
+            widget.grid(row=index, column=1, sticky="w", pady=5)
+            self.write_adhoc_widgets.append(widget)
+        self.write_function_var.trace_add("write", lambda *_args: self._write_function_changed())
+
+        self.write_status_var = tk.StringVar(value="Select an existing write request or configure an ad-hoc command.")
+        self.write_elapsed_var = tk.StringVar(value="-")
+        ttk.Button(tab, text="REVIEW AND WRITE", command=self._test_write).grid(row=10, column=0, columnspan=2, pady=(14, 10))
+        ttk.Label(tab, text="Status:").grid(row=11, column=0, sticky="nw")
+        ttk.Label(tab, textvariable=self.write_status_var, wraplength=680, justify="left").grid(row=11, column=1, columnspan=3, sticky="w")
+        ttk.Label(tab, text="Response time:").grid(row=12, column=0, sticky="w", pady=5)
+        ttk.Label(tab, textvariable=self.write_elapsed_var).grid(row=12, column=1, sticky="w")
+        ttk.Label(tab, text="Raw response:").grid(row=13, column=0, sticky="nw", pady=5)
+        self.write_raw = tk.Text(tab, height=7, wrap="word", font=("Consolas", 9))
+        self.write_raw.grid(row=13, column=1, columnspan=3, sticky="nsew")
+        self.write_raw.configure(state="disabled")
+        tab.columnconfigure(1, weight=1)
+        tab.columnconfigure(3, weight=1)
+        tab.rowconfigure(13, weight=1)
+        if self.write_target_list:
+            self.write_existing_var.set(self.write_target_list[0].summary)
+            self._existing_write_changed()
+        if self.templates:
+            self.write_device_var.set(self.templates[0].device_summary)
+        self._write_mode_changed()
+
     def _build_result_panel(self, parent, start_row):
         ttk.Label(parent, text="Status:").grid(row=start_row, column=0, sticky="nw")
         ttk.Label(parent, textvariable=self.status_var, wraplength=650, justify="left").grid(row=start_row, column=1, columnspan=3, sticky="w", padx=(8, 0))
@@ -283,6 +360,90 @@ class LiveModbusTesterWindow(tk.Toplevel):
             self.adhoc_status_var.set(f"ERROR: {result.error}")
             self._set_text(self.adhoc_raw, result.raw_response)
 
+    def _write_mode_changed(self):
+        existing = self.write_mode_var.get() == "existing"
+        self.write_existing_combo.configure(state="readonly" if existing and self.write_target_list else "disabled")
+        self.write_existing_values_entry.configure(state="normal" if existing and self.write_target_list else "disabled")
+        for widget in self.write_adhoc_widgets:
+            widget.configure(state="disabled" if existing else ("readonly" if isinstance(widget, ttk.Combobox) else "normal"))
+
+    def _existing_write_changed(self):
+        target = self.write_target_by_label.get(self.write_existing_var.get())
+        if target is not None:
+            self.write_existing_values_var.set(str(target.request.values or "0"))
+            self.write_status_var.set(
+                f"Ready: {target.transport.upper()} {target.device_name}, FC{int(target.request.function):02d}, "
+                f"register {target.request.register}, value(s) {target.request.values}."
+            )
+
+    def _write_function_changed(self):
+        function = WRITE_FUNCTION_CHOICES.get(self.write_function_var.get(), 6)
+        if function in {5, 15}:
+            self.write_dtype_var.set("bool")
+            self.write_order_var.set("none")
+        elif self.write_dtype_var.get() == "bool":
+            self.write_dtype_var.set("int16")
+            self.write_order_var.set("high_byte_first")
+
+    def _selected_write_target(self):
+        if self.write_mode_var.get() == "existing":
+            target = self.write_target_by_label.get(self.write_existing_var.get())
+            if target is None:
+                raise ValueError("This project has no configured write request to test.")
+            return make_adhoc_write_target(
+                target,
+                function=int(target.request.function),
+                register=target.request.register,
+                values=self.write_existing_values_var.get(),
+                data_type=target.request.data_type,
+                byte_order=target.request.byte_order,
+            )
+        template = self.template_by_label.get(self.write_device_var.get())
+        if template is None:
+            raise ValueError("Choose a configured target device.")
+        return make_adhoc_write_target(
+            template,
+            function=WRITE_FUNCTION_CHOICES[self.write_function_var.get()],
+            register=int(self.write_register_var.get()),
+            values=self.write_values_var.get(),
+            data_type=self.write_dtype_var.get(),
+            byte_order=self.write_order_var.get(),
+        )
+
+    def _test_write(self):
+        if self.execute is None:
+            return
+        try:
+            target = self._selected_write_target()
+        except Exception as exc:
+            messagebox.showerror("Invalid write request", str(exc), parent=self)
+            return
+        request = target.request
+        summary = (
+            f"Device: {target.transport.upper()} | {target.device_name}\n"
+            f"Device/Unit ID: {target.device_id}\n"
+            f"Function: FC{int(request.function):02d}\n"
+            f"Register: {request.register}\n"
+            f"Value(s): {request.values}\n"
+            f"Data type / order: {request.data_type} / {request.byte_order}\n\n"
+            "This command will be sent immediately. Type WRITE to continue:"
+        )
+        confirmation = simpledialog.askstring("Confirm live Modbus write", summary, parent=self)
+        if confirmation != "WRITE":
+            self.write_status_var.set("Write cancelled; confirmation text did not match WRITE.")
+            return
+        self.write_status_var.set("Writing...")
+        self.write_elapsed_var.set("-")
+        self._set_text(self.write_raw, "")
+        self.update_idletasks()
+        result = self.execute(target)
+        self.write_elapsed_var.set(f"{result.elapsed_ms:.1f} ms")
+        if result.ok:
+            self.write_status_var.set("WRITE OK. Verify the value through the normal feedback/readback request.")
+            self._set_text(self.write_raw, result.raw_response)
+        else:
+            self.write_status_var.set(f"WRITE ERROR: {result.error}")
+            self._set_text(self.write_raw, result.raw_response)
     def _stop_scan(self):
         self.scan_stop_requested = True
 
