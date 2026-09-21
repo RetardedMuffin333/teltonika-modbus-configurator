@@ -41,7 +41,7 @@ def first_free_register_range(
     ranges = sorted(
         (m.register, m.register + mapping_width(m) - 1)
         for m in project.mappings
-        if m.enabled and m.register_type == register_type
+        if m.enabled and m.deploy and m.register_type == register_type
     )
 
     for start, end in ranges:
@@ -62,13 +62,13 @@ def _source_block_width(project: Project, register_type: str, source_start: int)
     """Infer a cloned source-device block beginning exactly at ``source_start``."""
     anchors = [
         m for m in project.mappings
-        if m.enabled and m.register_type == register_type and m.register == source_start
+        if m.enabled and m.deploy and m.register_type == register_type and m.register == source_start
     ]
     widths = []
     for anchor in anchors:
         group = [
             m for m in project.mappings
-            if m.enabled and m.register_type == register_type and m.device == anchor.device
+            if m.enabled and m.deploy and m.register_type == register_type and m.device == anchor.device
         ]
         if group:
             widths.append(max((m.register - source_start) + mapping_width(m) for m in group))
@@ -102,10 +102,10 @@ def next_free_register(
     same_request = [
         m
         for m in project.mappings
-        if m.register_type == register_type and request_name and m.request == request_name
+        if m.deploy and m.register_type == register_type and request_name and m.request == request_name
     ]
     candidates = same_request or [
-        m for m in project.mappings if m.register_type == register_type
+        m for m in project.mappings if m.deploy and m.register_type == register_type
     ]
     if not candidates:
         return default
