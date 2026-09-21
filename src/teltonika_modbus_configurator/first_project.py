@@ -54,10 +54,12 @@ def validate_first_project_options(options: FirstProjectOptions) -> list[str]:
             errors.append("Serial device path is required.")
         if options.baudrate <= 0:
             errors.append("Baudrate must be positive.")
-        if options.databits not in {7, 8}:
-            errors.append("Data bits must be 7 or 8.")
-        if options.parity not in {"none", "even", "odd"}:
-            errors.append("Parity must be none, even, or odd.")
+        if options.serial_device not in {"/dev/rs232", "/dev/rs485"}:
+            errors.append("Serial device must be /dev/rs232 or /dev/rs485.")
+        if options.databits not in {5, 6, 7, 8}:
+            errors.append("Data bits must be 5, 6, 7, or 8.")
+        if options.parity not in {"none", "even", "odd", "mark", "space"}:
+            errors.append("Parity must be none, even, odd, mark, or space.")
         if options.stopbits not in {1, 2}:
             errors.append("Stop bits must be 1 or 2.")
         if not options.rtu_device_name.strip():
