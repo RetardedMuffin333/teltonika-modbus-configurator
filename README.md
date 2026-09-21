@@ -35,6 +35,7 @@ TCP devices --- Ethernet -/       |
 - Live RutOS configuration import over SSH.
 - UCI preview, validation, live diff, guarded deployment, backups, and rollback.
 - Read-only live diagnostics through the RutOS Web API.
+- A shareable project report with batching, workload, address-block, validation, and safety summaries.
 
 ## Installation
 
@@ -271,6 +272,12 @@ Open **Tools → Live Modbus Tester...**. It uses the gateway's RutOS Web API `t
 | **Device Scan** | Sequentially tests every enabled FC01–FC04 request; one failure does not stop the scan. |
 
 The tester is read-only. Test writes through the normal SCADA write mapping and feedback readback.
+
+## Project Report
+
+Open **Tools → Project Report...** to generate a read-only commissioning and support summary. The report includes device and request totals, physical batches, logical symbols, estimated requests avoided by batching, occupied TCP Server blocks, workload per source device, validation results, and enabled-write safety checks.
+
+Use **Save as TXT...** to archive it with commissioning documentation or **Copy to clipboard** when requesting support. Generating a report does not modify the project or contact the gateway. Reported workload is a configured-request count, not a measured cycle time; use the Live Modbus Tester for actual response timing.
 
 ## Validation
 
