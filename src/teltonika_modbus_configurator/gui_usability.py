@@ -51,8 +51,8 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         action_bar.pack(fill="x", pady=(4, 0))
         ttk.Button(action_bar, text="Create TCP mapping(s) from selected request(s)", command=self.create_rtu_tcp_mappings).pack(side="left", padx=3)
         ttk.Button(action_bar, text="Create write request(s)", command=self.create_rtu_scada_write_target).pack(side="left", padx=3)
-        ttk.Button(action_bar, text="Batch selected reads", command=self.batch_selected_rtu_reads).pack(side="left", padx=(16, 3))
-        ttk.Button(action_bar, text="Auto-batch device reads", command=self.auto_batch_rtu_reads).pack(side="left", padx=3)
+        ttk.Button(action_bar, text="Batch selected requests", command=self.batch_selected_rtu_reads).pack(side="left", padx=(16, 3))
+        ttk.Button(action_bar, text="Auto-batch device requests", command=self.auto_batch_rtu_reads).pack(side="left", padx=3)
 
     def _build_tcp_clients_tab(self):
         super()._build_tcp_clients_tab()
@@ -62,8 +62,8 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         action_bar.pack(fill="x", pady=(4, 0))
         ttk.Button(action_bar, text="Create TCP mapping(s) from selected request(s)", command=self.create_tcp_client_tcp_mappings).pack(side="left", padx=3)
         ttk.Button(action_bar, text="Create write request(s)", command=self.create_tcp_scada_write_target).pack(side="left", padx=3)
-        ttk.Button(action_bar, text="Batch selected reads", command=self.batch_selected_tcp_reads).pack(side="left", padx=(16, 3))
-        ttk.Button(action_bar, text="Auto-batch device reads", command=self.auto_batch_tcp_reads).pack(side="left", padx=3)
+        ttk.Button(action_bar, text="Batch selected requests", command=self.batch_selected_tcp_reads).pack(side="left", padx=(16, 3))
+        ttk.Button(action_bar, text="Auto-batch device requests", command=self.auto_batch_tcp_reads).pack(side="left", padx=3)
 
     def _build_mappings_tab(self):
         super()._build_mappings_tab()
@@ -165,7 +165,7 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         )
         if not plan.batch_requests:
             detail = "\n".join(plan.skipped) or "No eligible individual read requests were found."
-            messagebox.showinfo("Batch existing reads", detail, parent=self)
+            messagebox.showinfo("Batch selected requests", detail, parent=self)
             return
         blocks = "\n".join(
             f"• {request.name}: FC{int(request.function):02d} source {request.register}.."
@@ -177,7 +177,7 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         if plan.skipped:
             skipped = "\n\nSkipped:\n" + "\n".join(f"• {line}" for line in plan.skipped)
         if not messagebox.askyesno(
-            "Batch existing reads",
+            "Batch selected requests",
             f"Replace {plan.ready_count} individual cyclic read request(s) with "
             f"{len(plan.batch_requests)} physical batch request(s)?\n\n"
             f"The {plan.ready_count} original names remain as atvise symbol aliases.\n\n"
@@ -196,7 +196,7 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         device_index = self.selected_device_index()
         indices = sorted(selected_numeric_indices(self.requests_tree.selection()))
         if device_index is None or not indices:
-            messagebox.showerror("Batch existing reads", "Select one or more RTU read requests first.", parent=self); return
+            messagebox.showerror("Batch selected requests", "Select one or more RTU requests first.", parent=self); return
         device = self.project.devices[device_index]
         self._batch_existing_reads(
             device_name=device.name,
@@ -206,7 +206,7 @@ class UsableCarelProjectEditor(CarelProjectEditor):
     def auto_batch_rtu_reads(self):
         device_index = self.selected_device_index()
         if device_index is None:
-            messagebox.showerror("Batch existing reads", "Select an RTU source device first.", parent=self); return
+            messagebox.showerror("Batch selected requests", "Select an RTU source device first.", parent=self); return
         device = self.project.devices[device_index]
         self._batch_existing_reads(device_name=device.name, request_names=[request.name for request in device.requests])
 
@@ -214,7 +214,7 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         device_index = self.selected_tcp_client_index()
         indices = sorted(selected_numeric_indices(self.tcp_client_requests_tree.selection()))
         if device_index is None or not indices:
-            messagebox.showerror("Batch existing reads", "Select one or more TCP read requests first.", parent=self); return
+            messagebox.showerror("Batch selected requests", "Select one or more TCP requests first.", parent=self); return
         device = self.project.tcp_clients[device_index]
         self._batch_existing_reads(
             device_name=device.name,
@@ -224,7 +224,7 @@ class UsableCarelProjectEditor(CarelProjectEditor):
     def auto_batch_tcp_reads(self):
         device_index = self.selected_tcp_client_index()
         if device_index is None:
-            messagebox.showerror("Batch existing reads", "Select a Modbus TCP source device first.", parent=self); return
+            messagebox.showerror("Batch selected requests", "Select a Modbus TCP source device first.", parent=self); return
         device = self.project.tcp_clients[device_index]
         self._batch_existing_reads(device_name=device.name, request_names=[request.name for request in device.requests])
 

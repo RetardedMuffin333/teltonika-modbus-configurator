@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Guard against exporting live-imported physical batch blocks as individual atvise symbols when their project-only aliases are unavailable.
 - Nested TCP Server Mapping expanders showing every logical register alias and its exact atvise `.Symbol` line inside each physical batch.
 - Manual and automatic conversion of existing individual FC01-FC04 requests into optimized physical batches while preserving original names as atvise symbol aliases.
+- Optional SCADA write-companion creation in atvise Symbol imports, including alongside batched reads; Carel batched imports now support the same combination.
 
 ## [0.7.0] - 2026-09-21
 
