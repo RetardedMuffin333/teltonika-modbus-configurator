@@ -225,6 +225,7 @@ def import_project(modbus_client: str, modbus_server: str, *, attach_source: boo
             permissions=o.get("tag_permissions", "r"),
             data_type=o.get("tag_type", "int16"),
             count=int(o.get("tag_count", "1")),
+            source_offset=int(o.get("tag_start", "0")),
             source_id=section.name,
         ))
 

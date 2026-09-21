@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -9,6 +10,12 @@ from .atvise_symbols import export_atvise_symbols
 from .gui import FormDialog, vars_for
 from .gui_bulk import BulkGeneratorWindow
 from .gui_deploy import DeploymentEditor
+from .mapping_lifecycle import (
+    deployed_mappings_for_device,
+    deployed_mappings_for_request,
+    remove_symbol_aliases_for_device,
+    remove_symbol_aliases_for_requests,
+)
 from .models import FunctionCode, Request, ServerMapping, TcpClientDevice, permissions_for_function
 
 FUNCTION_CHOICES = (
@@ -178,8 +185,9 @@ class ExtendedProjectEditor(DeploymentEditor):
         i = self.selected_tcp_client_index()
         if i is None: return
         name = self.project.tcp_clients[i].name
-        if any(m.device == name for m in self.project.mappings):
+        if deployed_mappings_for_device(self.project, device_name=name):
             messagebox.showerror("TCP client in use", "Delete TCP mappings that reference this client first.", parent=self); return
+        remove_symbol_aliases_for_device(self.project, device_name=name)
         del self.project.tcp_clients[i]
         self.mark_dirty(); self.refresh_all()
 
@@ -193,6 +201,8 @@ class ExtendedProjectEditor(DeploymentEditor):
     def refresh_mappings(self):
         self._clear(self.mappings_tree)
         for i, m in enumerate(self.project.mappings):
+            if not m.deploy:
+                continue
             request = self._request_for_mapping(m.device, m.request)
             access = permissions_for_function(request.function) if request else m.permissions
             self.mappings_tree.insert("", "end", iid=str(i), values=(m.name, m.device, m.request, m.register_type, m.register, access, m.data_type, m.count, "Yes" if m.enabled else "No"))
@@ -274,8 +284,9 @@ class ExtendedProjectEditor(DeploymentEditor):
         di = self.selected_tcp_client_index(); sel = self.tcp_client_requests_tree.selection()
         if di is None or not sel: return
         ri = int(sel[0]); source = self.project.tcp_clients[di]; name = source.requests[ri].name
-        if any(m.device == source.name and m.request == name for m in self.project.mappings):
+        if deployed_mappings_for_request(self.project, device_name=source.name, request_name=name):
             messagebox.showerror("Request in use", "Delete TCP mappings that reference this request first.", parent=self); return
+        remove_symbol_aliases_for_requests(self.project, device_name=source.name, request_names={name})
         del source.requests[ri]
         self.mark_dirty(); self.refresh_tcp_client_requests()
 
@@ -312,8 +323,7 @@ class ExtendedProjectEditor(DeploymentEditor):
         i = int(sel[0]); m = self.project.mappings[i]; v = self._mapping_dialog(vars_for(m))
         if not v: return
         access = self._mapping_access(v["device"], v["request"])
-        source_id = m.source_id
-        self.project.mappings[i] = ServerMapping(name=v["name"], device=v["device"], request=v["request"], register=int(v["register"]), register_type=v["register_type"], enabled=bool(v["enabled"]), permissions=access, data_type=v["data_type"], count=int(v["count"]), source_id=source_id)
+        self.project.mappings[i] = replace(m, name=v["name"], device=v["device"], request=v["request"], register=int(v["register"]), register_type=v["register_type"], enabled=bool(v["enabled"]), permissions=access, data_type=v["data_type"], count=int(v["count"]))
         self.mark_dirty(); self.refresh_mappings()
 
     def open_bulk_generator(self):
@@ -329,7 +339,7 @@ class ExtendedProjectEditor(DeploymentEditor):
             text = export_atvise_symbols(self.project, include_disabled=include_disabled)
         except Exception as exc:
             messagebox.showerror("atvise symbol export", str(exc), parent=self); return
-        selected = [m for m in self.project.mappings if include_disabled or m.enabled]
+        selected = [m for m in self.project.mappings if m.export_symbol and (include_disabled or m.enabled)]
         if not selected:
             messagebox.showerror("atvise symbol export", "There are no TCP mappings to export.", parent=self); return
         default_name = self.path.stem if self.path else "Teltonika_Modbus"

@@ -152,6 +152,10 @@ def load_project(path: str | Path) -> Project:
         permissions=str(i.get("permissions", "r")),
         data_type=str(i.get("data_type", "int16")),
         count=int(i.get("count", 1)),
+        source_offset=int(i.get("source_offset", 0)),
+        symbol_data_type=None if i.get("symbol_data_type") is None else str(i["symbol_data_type"]),
+        deploy=_bool(i.get("deploy"), True),
+        export_symbol=_bool(i.get("export_symbol"), True),
         source_id=None if i.get("source_id") is None else str(i["source_id"]),
     ) for i in raw_mappings]
 

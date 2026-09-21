@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 
 from .models import FunctionCode, Project, Request, ServerMapping
+from .read_batching import batch_read_items
 from .register_allocator import first_free_register_range, register_value_width
 
 
@@ -171,11 +172,17 @@ def apply_symbol_import_plan(
     *,
     device_name: str,
     mapping_start: int = 1025,
+    batch_reads: bool = False,
 ) -> int:
     """Apply selected ready rows to an existing RTU or TCP target device."""
     requests = _target_requests(project, device_name)
     ready = [item for item in items if item.request is not None and item.mapping is not None]
     packed = repack_symbol_import_items(project, ready, mapping_start=mapping_start)
-    requests.extend(item.request for item in packed if item.request is not None)
+    if batch_reads:
+        block_requests, block_mappings, packed = batch_read_items(requests, packed)
+        requests.extend(block_requests)
+        project.mappings.extend(block_mappings)
+    else:
+        requests.extend(item.request for item in packed if item.request is not None)
     project.mappings.extend(item.mapping for item in packed if item.mapping is not None)
     return len(packed)

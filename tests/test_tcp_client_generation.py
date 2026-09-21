@@ -64,6 +64,34 @@ def test_live_tcp_client_zero_edit_is_byte_exact():
     assert generated.modbus_server == LIVE_SERVER
 
 
+def test_mapping_tag_start_round_trips():
+    project = Project(
+        tcp_clients=[TcpClientDevice(
+            name="TCP_Test",
+            host="10.33.24.5",
+            requests=[Request(
+                name="InputBlock",
+                function=FunctionCode.READ_INPUT_REGISTERS,
+                register=10,
+                count=4,
+                data_type="uint16",
+            )],
+        )],
+        mappings=[ServerMapping(
+            name="SecondValue",
+            device="TCP_Test",
+            request="InputBlock",
+            register=1025,
+            register_type="input_register",
+            source_offset=3,
+        )],
+    )
+    generated = generate_uci(project)
+    assert "option tag_start '3'" in generated.modbus_server
+    imported = import_project(generated.modbus_client, generated.modbus_server)
+    assert imported.mappings[0].source_offset == 3
+
+
 def test_edit_live_tcp_client_preserves_unmodeled_options():
     project = import_project(LIVE_CLIENT, LIVE_SERVER)
     tcp = project.tcp_clients[0]

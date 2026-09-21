@@ -4,6 +4,8 @@ from teltonika_modbus_configurator.symbol_import import (
     build_symbol_import_plan,
     load_symbol_file,
 )
+from teltonika_modbus_configurator.atvise_symbols import export_atvise_symbols
+from teltonika_modbus_configurator.uci_generator import generate_uci
 
 
 def test_load_symbol_file_parses_real_syntax(tmp_path):
@@ -96,3 +98,38 @@ def test_selected_hrd_rows_are_repacked_as_two_register_values():
     plan = build_symbol_import_plan(project, rows, device_name="PLC", mapping_start=1200)
     assert [item.request.count for item in plan] == [2, 2]
     assert [item.mapping.register for item in plan] == [1200, 1202]
+
+
+def test_symbol_import_can_use_same_physical_batch_model_as_register_tables():
+    project = Project(tcp_clients=[TcpClientDevice(name="PLC", host="10.0.0.2")])
+    from teltonika_modbus_configurator.symbol_import import SymbolRow
+    rows = [
+        SymbolRow(1, "Temperature", "HRR", 10),
+        SymbolRow(2, "Mode", "HR", 12),
+        SymbolRow(3, "Scheduler_Day", "HRD", 20),
+    ]
+    plan = build_symbol_import_plan(project, rows, device_name="PLC", mapping_start=1025)
+
+    assert apply_symbol_import_plan(
+        project, plan, device_name="PLC", mapping_start=1025, batch_reads=True
+    ) == 3
+
+    assert [(r.name, r.register, r.count, r.data_type) for r in project.tcp_clients[0].requests] == [
+        ("Batch_FC03_10_21", 10, 12, "uint16")
+    ]
+    deployed = [m for m in project.mappings if m.deploy]
+    aliases = {m.name: m for m in project.mappings if not m.deploy}
+    assert [(m.name, m.register, m.count, m.export_symbol) for m in deployed] == [
+        ("Batch_FC03_10_21", 1025, 12, False)
+    ]
+    assert (aliases["Temperature"].register, aliases["Temperature"].source_offset) == (1025, 0)
+    assert (aliases["Mode"].register, aliases["Mode"].source_offset) == (1027, 2)
+    assert (aliases["Scheduler_Day"].register, aliases["Scheduler_Day"].source_offset) == (1035, 10)
+
+    generated = generate_uci(project)
+    assert generated.modbus_client.count("config request_") == 1
+    assert generated.modbus_server.count("config tag ") == 1
+    symbols = export_atvise_symbols(project)
+    assert "sym-Temperature=HRR1025," in symbols
+    assert "sym-Mode=HR1027," in symbols
+    assert "sym-Scheduler_Day=HRD1035," in symbols

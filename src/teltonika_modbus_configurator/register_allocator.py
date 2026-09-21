@@ -7,7 +7,6 @@ from .models import Project, ServerMapping
 
 _TWO_REGISTER_TYPES = {"int32", "uint32", "float32"}
 
-
 def register_value_width(data_type: str, register_type: str) -> int:
     """Return Modbus address width for one mapped value.
 

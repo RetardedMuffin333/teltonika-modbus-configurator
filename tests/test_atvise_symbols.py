@@ -28,7 +28,8 @@ def test_exports_verified_atvise_prefixes():
             _mapping("Pump", 1101, "coil", "bool"),
             _mapping("Pressure", 1200, "input_register", "float32"),
             _mapping("FloatCommand", 1202, "holding_register", "float32"),
-            _mapping("DoubleCommand", 1204, "holding_register", "float64"),
+            _mapping("SchedulerDay", 1204, "holding_register", "int32"),
+            _mapping("PulseCounter", 1206, "holding_register", "uint32"),
         ]
     )
 
@@ -40,7 +41,8 @@ def test_exports_verified_atvise_prefixes():
         "sym-Pump=DA1101,\n"
         "sym-Pressure=IRR1200,\n"
         "sym-FloatCommand=HRR1202,\n"
-        "sym-DoubleCommand=HRD1204,\n"
+        "sym-SchedulerDay=HRD1204,\n"
+        "sym-PulseCounter=HRD1206,\n"
     )
 
 
@@ -61,12 +63,26 @@ def test_can_include_disabled_mapping_explicitly():
     assert "sym-Hidden=IR1025," in export_atvise_symbols(project, include_disabled=True)
 
 
+def test_semantic_symbol_datatype_can_differ_from_raw_server_tag():
+    mapping = _mapping("Temperature", 1025, "holding_register", "uint16")
+    mapping.count = 2
+    mapping.symbol_data_type = "float32"
+    assert "sym-Temperature=HRR1025," in export_atvise_symbols(Project(mappings=[mapping]))
+
+
+def test_physical_block_mapping_can_be_excluded_from_symbol_export():
+    mapping = _mapping("Batch", 1025, "holding_register", "uint16")
+    mapping.export_symbol = False
+    assert export_atvise_symbols(Project(mappings=[mapping])) == "[]\n"
+
+
 @pytest.mark.parametrize(
     ("register_type", "data_type"),
     [
         ("input_register", "int32"),
-        ("holding_register", "uint32"),
+        ("input_register", "uint32"),
         ("input_register", "float64"),
+        ("holding_register", "float64"),
     ],
 )
 def test_rejects_unverified_atvise_encodings(register_type, data_type):

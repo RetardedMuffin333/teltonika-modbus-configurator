@@ -45,6 +45,21 @@ class SymbolPreviewWindow(tk.Toplevel):
             text="Symbol addresses are treated as physical device registers. Connection IP/slave/serial settings come from the selected existing device.",
         ).grid(row=1, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
 
+        self.read_mode_var = tk.StringVar(value="batched")
+        ttk.Label(options, text="Read import mode:").grid(row=2, column=0, padx=6, pady=(0, 6), sticky="w")
+        ttk.Radiobutton(
+            options,
+            text="Batched (recommended; FC03/FC04 up to 100 registers, FC01/FC02 up to 1000 bits)",
+            variable=self.read_mode_var,
+            value="batched",
+        ).grid(row=2, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
+        ttk.Radiobutton(
+            options,
+            text="Register by register",
+            variable=self.read_mode_var,
+            value="individual",
+        ).grid(row=2, column=5, columnspan=2, padx=6, pady=(0, 6), sticky="w")
+
         filters = ttk.Frame(self)
         filters.pack(fill="x", padx=10, pady=(0, 6))
         ttk.Label(filters, text="Symbol type:").pack(side="left")
@@ -144,9 +159,19 @@ class SymbolPreviewWindow(tk.Toplevel):
         items = [self.plan[i] for i in selected if self.plan[i].request is not None and self.plan[i].mapping is not None]
         if not items:
             messagebox.showinfo("Symbol import", "Select at least one ready row.", parent=self); return
+        batch_reads = self.read_mode_var.get() == "batched"
+        mode = "bounded batch requests" if batch_reads else "one request per symbol"
+        if not messagebox.askyesno(
+            "Symbol import",
+            f"Import {len(items)} selected symbols into {self.device_var.get()} using {mode}?\n\n"
+            "This changes only the project; it does not deploy to RutOS.",
+            parent=self,
+        ):
+            return
         try:
             count = apply_symbol_import_plan(
-                self.parent.project, items, device_name=self.device_var.get(), mapping_start=int(self.start_var.get())
+                self.parent.project, items, device_name=self.device_var.get(), mapping_start=int(self.start_var.get()),
+                batch_reads=batch_reads,
             )
         except Exception as exc:
             messagebox.showerror("Symbol import", str(exc), parent=self); return
