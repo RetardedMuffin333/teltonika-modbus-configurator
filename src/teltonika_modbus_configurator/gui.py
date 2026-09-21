@@ -24,7 +24,11 @@ from .yaml_writer import dump_project
 
 
 REGISTER_TYPES = ("coil", "discrete_input", "holding_register", "input_register")
-PARITIES = ("none", "even", "odd")
+SERIAL_DEVICES = ("/dev/rs485", "/dev/rs232")
+BAUDRATES = (300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200)
+DATA_BITS = (5, 6, 7, 8)
+STOP_BITS = (1, 2)
+PARITIES = ("none", "even", "odd", "mark", "space")
 
 
 class FormDialog(simpledialog.Dialog):
@@ -47,9 +51,9 @@ class FormDialog(simpledialog.Dialog):
                 var = tk.BooleanVar(value=bool(value))
                 widget = ttk.Checkbutton(master, variable=var)
                 widget._tmc_var = var
-            elif kind == "choice":
+            elif kind in {"choice", "suggestion"}:
                 var = tk.StringVar(value=str(value or choices[0]))
-                widget = ttk.Combobox(master, textvariable=var, values=choices, state="readonly")
+                widget = ttk.Combobox(master, textvariable=var, values=choices, state="readonly" if kind == "choice" else "normal")
                 widget._tmc_var = var
             else:
                 var = tk.StringVar(value=str(value))
@@ -90,9 +94,9 @@ class FormDialog(simpledialog.Dialog):
             if kind == "bool":
                 var = tk.BooleanVar(value=bool(value))
                 widget = ttk.Checkbutton(master, variable=var)
-            elif kind == "choice":
+            elif kind in {"choice", "suggestion"}:
                 var = tk.StringVar(value=str(value or choices[0]))
-                widget = ttk.Combobox(master, textvariable=var, values=choices, state="readonly")
+                widget = ttk.Combobox(master, textvariable=var, values=choices, state="readonly" if kind == "choice" else "normal")
             else:
                 var = tk.StringVar(value=str(value))
                 widget = ttk.Entry(master, textvariable=var, width=34)
@@ -394,9 +398,9 @@ class ProjectEditor(tk.Tk):
 
     def _connection_dialog(self, initial=None):
         dlg = FormDialog(self, "Connection", [
-            ("name", "Name", "text", None), ("device", "Device", "text", None),
-            ("baudrate", "Baudrate", "text", None), ("databits", "Data bits", "text", None),
-            ("parity", "Parity", "choice", PARITIES), ("stopbits", "Stop bits", "text", None),
+            ("name", "Name", "text", None), ("device", "Device", "choice", SERIAL_DEVICES),
+            ("baudrate", "Baudrate", "choice", BAUDRATES), ("databits", "Data bits", "choice", DATA_BITS),
+            ("parity", "Parity", "choice", PARITIES), ("stopbits", "Stop bits", "choice", STOP_BITS),
         ], initial)
         return dlg.values
 
