@@ -11,4 +11,4 @@ def test_pyproject_and_runtime_versions_match():
 
 
 def test_development_version_is_0_7():
-    assert __version__ == "0.7.0.dev0"
+    assert __version__ == "0.7.0"
