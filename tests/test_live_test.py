@@ -1,9 +1,11 @@
 from teltonika_modbus_configurator.live_test import (
     device_templates,
     make_adhoc_target,
+    make_adhoc_write_target,
     project_test_targets,
     read_targets_for_device,
     run_timed_test,
+    write_targets,
 )
 from teltonika_modbus_configurator.models import Device, FunctionCode, Request, SerialConnection, TcpClientDevice
 
@@ -123,6 +125,53 @@ def test_make_adhoc_coil_read_forces_bool_format():
     )
     assert target.request.data_type == "bool"
     assert target.request.byte_order == "none"
+
+
+def test_write_targets_include_disabled_scada_commands():
+    tcp = TcpClientDevice(name="Carel", requests=[
+        Request("Read", FunctionCode.READ_HOLDING_REGISTERS, 1),
+        Request("Write", FunctionCode.WRITE_SINGLE_HOLDING_REGISTER, 1, enabled=False, values="9"),
+    ])
+    targets = project_test_targets([], [tcp])
+    assert [target.request.name for target in write_targets(targets)] == ["Write"]
+
+
+def test_make_adhoc_float_write_uses_fc16_and_value():
+    tcp = TcpClientDevice(name="Carel", requests=[Request("Read", FunctionCode.READ_HOLDING_REGISTERS, 1)])
+    template = project_test_targets([], [tcp])[0]
+    target = make_adhoc_write_target(
+        template, function=16, register=7, values="21.5",
+        data_type="float32", byte_order="1234",
+    )
+    assert target.request.function == FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
+    assert target.request.values == "21.5"
+    assert target.request.enabled is False
+
+
+def test_make_adhoc_coil_write_normalizes_boolean_values():
+    tcp = TcpClientDevice(name="Carel", requests=[Request("Read", FunctionCode.READ_COILS, 1)])
+    template = project_test_targets([], [tcp])[0]
+    target = make_adhoc_write_target(
+        template, function=15, register=7, values="true 0 false 1",
+        data_type="float32", byte_order="1234",
+    )
+    assert target.request.values == "1 0 0 1"
+    assert target.request.data_type == "bool"
+    assert target.request.byte_order == "none"
+
+
+def test_make_adhoc_write_rejects_32bit_fc06():
+    tcp = TcpClientDevice(name="Carel", requests=[Request("Read", FunctionCode.READ_HOLDING_REGISTERS, 1)])
+    template = project_test_targets([], [tcp])[0]
+    try:
+        make_adhoc_write_target(
+            template, function=6, register=7, values="21.5",
+            data_type="float32", byte_order="1234",
+        )
+    except ValueError as exc:
+        assert "use FC16" in str(exc)
+    else:
+        raise AssertionError("Expected FC06 FLOAT32 to be rejected")
 
 
 def test_timed_test_captures_success_and_raw_response():
