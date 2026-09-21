@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 0.8.0.dev0
+
+### Added
+
+- First Project Wizard for guided RTU-only, TCP-only, and mixed gateway setup.
+- Wizard setup for the upstream TCP Server and the first RTU/TCP source devices.
+- Optional hand-off from the wizard to Register Table or atvise Symbol import.
+
 ## [0.7.0] - 2026-09-21
 
 Seventh release baseline, focused on scalable batched Modbus reads, reliable atvise Connect integration, consistent large-project imports, responsive live deployment, and project diagnostics.
