@@ -23,6 +23,7 @@ FUNCTION_REGISTER_TYPES = {
     FunctionCode.WRITE_SINGLE_COIL: "coil", FunctionCode.WRITE_SINGLE_HOLDING_REGISTER: "holding_register",
     FunctionCode.WRITE_MULTIPLE_COILS: "coil", FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS: "holding_register",
 }
+_MULTI_REGISTER_VALUE_TYPES = {"int32", "uint32", "float32"}
 
 
 @dataclass(slots=True)
@@ -55,6 +56,14 @@ def _validate_requests(owner_name: str, requests: list[Request], messages: list[
                 messages.append(ValidationMessage("error", f"{prefix}: FC{int(request.function):02d} accepts exactly one value"))
             if request.data_type == "pdu":
                 messages.append(ValidationMessage("error", f"{prefix}: PDU is not a documented write datatype"))
+            if (
+                request.function == FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
+                and request.data_type in _MULTI_REGISTER_VALUE_TYPES
+            ):
+                messages.append(ValidationMessage(
+                    "error",
+                    f"{prefix}: FC06 cannot write {request.data_type}; use FC16 for a multi-register value",
+                ))
 
 
 def validate_project(project: Project) -> list[ValidationMessage]:
