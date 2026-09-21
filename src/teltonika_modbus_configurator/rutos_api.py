@@ -50,7 +50,7 @@ class RutOSApiClient:
     @staticmethod
     def _request_payload(target: LiveTestTarget) -> dict[str, str]:
         request = target.request
-        return {"server_id": str(target.device_id), "timeout": str(target.timeout or 5), "function": str(int(request.function)), "first_reg": str(request.register), "reg_count": str(request.count), "data_type": _request_data_type(request), "no_brackets": "0"}
+        return {"server_id": str(target.device_id), "timeout": str(target.timeout or 5), "function": str(int(request.function)), "first_reg": str(request.register), "reg_count": request.count_or_values, "data_type": _request_data_type(request), "no_brackets": "0"}
 
     def test_tcp(self, target: LiveTestTarget):
         if target.transport != "tcp":
