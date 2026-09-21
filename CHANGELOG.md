@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-09-21
+
+Seventh release baseline, focused on scalable batched Modbus reads, reliable atvise Connect integration, consistent large-project imports, responsive live deployment, and project diagnostics.
+
+### Added
+
+- Shared read batching for Carel register-table and atvise Connect Symbol imports.
+- Bounded FC03/FC04 blocks of up to 100 registers and FC01/FC02 blocks of up to 1000 bits.
+- One deployed physical TCP Server block mapping per batch with individual symbol-only aliases for atvise export.
+- Explicit **Batched (recommended)** and **Register by register** import modes.
+- Consistent batching support across Carel XLS/XLSX/CSV and atvise `.Symbol` imports.
+- Project Report under `Tools` with device/request/mapping totals, batching efficiency, estimated avoided requests, occupied TCP Server blocks, workload per device, validation results, and cyclic-write safety checks.
+- Project Report text export and clipboard copy.
+- Validator protection against FC06 use with INT32, UINT32, and FLOAT32 values; multi-register values require FC16.
+- Background execution and progress reporting for live preview, apply, and rollback operations.
+- Bounded SSH command waits and post-restart live configuration verification.
+
+### Changed
+
+- Large imported read sets now default to physical batch requests rather than one deployed request/mapping per logical symbol.
+- Individual imported variables inside a batch remain available in atvise `.Symbol` export with their original names and semantic datatypes.
+- Mapping and request deletion consistently removes dependent batch aliases.
+- Live deployment no longer blocks the Tk GUI while SSH and RutOS service operations are running.
+- Generated SCADA writes use FC05 for BOOL coils, FC06 for 8/16-bit holding-register values, and FC16 for 32-bit holding-register values.
+- README is now a colleague-facing operating guide covering installation, project workflow, imports, batching, writes, atvise settings, diagnostics, deployment, and troubleshooting.
+
+### Hardware verification
+
+v0.7 acceptance testing used a continuously running RUT956 test setup with:
+
+- Siemens RDF400MB devices over Modbus RTU/RS485;
+- a Carel controller over Modbus TCP;
+- hundreds of Holding Registers plus Coil/Input data;
+- atvise Connect as the upstream Modbus TCP client;
+- batched reads and individual symbol export;
+- BOOL, 16-bit, and FLOAT32 writes with feedback readback;
+- gateway/service restarts and automatic reconnection;
+- stable continuous operation.
+
+The tested large atvise configuration performed reliably with server-side batching, Maximum read gap `0`, and the atvise Connect optimizer disabled.
+
+### Deferred to v0.8+
+
+- First Project Wizard and guided initial setup.
+- Standalone Windows installer.
+- 64-bit RutOS datatypes until exact request tokens are hardware-verified.
+
 ## [0.6.0] - 2026-09-01
 
 Sixth release baseline, focused on hardware-verified live Modbus diagnostics through the RutOS Web API.
