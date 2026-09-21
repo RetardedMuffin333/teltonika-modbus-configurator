@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - First Project Wizard for guided RTU-only, TCP-only, and mixed gateway setup.
 - Wizard setup for the upstream TCP Server and the first RTU/TCP source devices.
 - Optional hand-off from the wizard to Register Table or atvise Symbol import.
+- Live Modbus write testing for configured and ad-hoc FC05/FC06/FC15/FC16 commands with explicit `WRITE` confirmation.
+- RutOS-compatible dropdowns for serial device, baudrate, data bits, parity, and stop bits.
+- Editable common-value dropdown suggestions for TCP port, Unit ID, polling period, and timeout.
 
 ## [0.7.0] - 2026-09-21
 
