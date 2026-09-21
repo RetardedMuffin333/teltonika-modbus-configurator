@@ -26,7 +26,7 @@ class AtviseSymbolExportError(ValueError):
     """Raised when a project mapping cannot be represented safely in a symbol file."""
 
 
-def _looks_like_physical_batch(mapping: ServerMapping) -> bool:
+def is_physical_batch_mapping(mapping: ServerMapping) -> bool:
     """Return whether a mapping is a raw deployed block, not one SCADA value.
 
     A live RutOS import cannot restore the symbol-only aliases that existed in
@@ -42,7 +42,7 @@ def physical_batches_without_symbol_aliases(project: Project) -> list[ServerMapp
     """Find raw batches that would otherwise be mistaken for atvise symbols."""
     return [
         mapping for mapping in project.mappings
-        if mapping.export_symbol and _looks_like_physical_batch(mapping)
+        if mapping.export_symbol and is_physical_batch_mapping(mapping)
     ]
 
 
@@ -82,7 +82,8 @@ def _prefix_for_mapping(mapping: ServerMapping) -> str:
     )
 
 
-def _symbol_line(mapping: ServerMapping) -> str:
+def atvise_symbol_line(mapping: ServerMapping) -> str:
+    """Format one mapping exactly as it appears in an atvise Symbol section."""
     prefix = _prefix_for_mapping(mapping)
 
     if not mapping.name.strip():
@@ -142,7 +143,7 @@ def export_atvise_symbols(
     ]
     lines = ["[]"]
     if not group_by_device:
-        lines.extend(_symbol_line(mapping) for mapping in mappings)
+        lines.extend(atvise_symbol_line(mapping) for mapping in mappings)
         return "\n".join(lines) + "\n"
 
     grouped: dict[str, list[ServerMapping]] = {}
@@ -150,5 +151,5 @@ def export_atvise_symbols(
         grouped.setdefault(mapping.device, []).append(mapping)
     for device_name, device_mappings in grouped.items():
         lines.append(f"[{_symbol_group(project, device_name)}]")
-        lines.extend(_symbol_line(mapping) for mapping in device_mappings)
+        lines.extend(atvise_symbol_line(mapping) for mapping in device_mappings)
     return "\n".join(lines) + "\n"

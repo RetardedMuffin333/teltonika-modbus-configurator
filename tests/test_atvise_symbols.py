@@ -2,6 +2,7 @@ import pytest
 
 from teltonika_modbus_configurator.atvise_symbols import (
     AtviseSymbolExportError,
+    atvise_symbol_line,
     export_atvise_symbols,
 )
 from teltonika_modbus_configurator.models import Project, ServerMapping
@@ -32,7 +33,6 @@ def test_exports_verified_atvise_prefixes():
             _mapping("PulseCounter", 1206, "holding_register", "uint32"),
         ]
     )
-
     assert export_atvise_symbols(project) == (
         "[]\n"
         "[D1]\n"
@@ -44,6 +44,12 @@ def test_exports_verified_atvise_prefixes():
         "sym-FloatCommand=HRR1202,\n"
         "sym-SchedulerDay=HRD1204,\n"
         "sym-PulseCounter=HRD1206,\n"
+    )
+
+
+def test_formats_one_symbol_for_mapping_tree_preview():
+    assert atvise_symbol_line(_mapping("Temperature", 1025, "holding_register", "float32")) == (
+        "sym-Temperature=HRR1025,"
     )
 
 

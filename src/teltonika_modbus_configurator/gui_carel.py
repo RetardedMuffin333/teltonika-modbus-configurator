@@ -6,6 +6,7 @@ from dataclasses import replace
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+from .atvise_symbols import AtviseSymbolExportError, atvise_symbol_line, is_physical_batch_mapping
 from .carel_convert import apply_carel_import_plan, build_carel_import_plan
 from .carel_import import load_carel_xls
 from .gui import vars_for
@@ -29,7 +30,7 @@ class CarelProjectEditor(ScadaProjectEditor):
         self.tabs.add(tab, text="TCP Server Mappings")
         self.mappings_tree = ttk.Treeview(
             tab,
-            columns=("request", "type", "register", "perm", "dtype", "count", "enabled"),
+            columns=("request", "type", "register", "perm", "dtype", "count", "enabled", "symbol"),
             show="tree headings",
         )
         self.mappings_tree.heading("#0", text="Source device / Mapping")
@@ -37,7 +38,7 @@ class CarelProjectEditor(ScadaProjectEditor):
         for key, title, width in (
             ("request", "Request", 190), ("type", "Type", 120), ("register", "Register", 80),
             ("perm", "Access", 65), ("dtype", "Data type", 100), ("count", "Count", 55),
-            ("enabled", "Enabled", 65),
+            ("enabled", "Enabled", 65), ("symbol", "atvise Symbol export", 310),
         ):
             self.mappings_tree.heading(key, text=title)
             self.mappings_tree.column(key, width=width, anchor="w")
@@ -58,17 +59,21 @@ class CarelProjectEditor(ScadaProjectEditor):
     def refresh_mappings(self):
         if not hasattr(self, "mappings_tree"):
             return
-        open_devices = set()
-        for iid in self.mappings_tree.get_children(""):
-            if self.mappings_tree.item(iid, "open"):
-                open_devices.add(iid.removeprefix("device::"))
+        open_items = {
+            iid
+            for root in self.mappings_tree.get_children("")
+            for iid in (root, *self.mappings_tree.get_children(root))
+            if self.mappings_tree.item(iid, "open")
+        }
         self.mappings_tree.delete(*self.mappings_tree.get_children())
         grouped = {}
+        aliases = {}
         for index, mapping in enumerate(self.project.mappings):
             # Symbol aliases describe individual SCADA variables inside a
             # deployed block.  They belong in the .Symbol export, not in the
             # list of physical RutOS TCP Server mappings.
             if not mapping.deploy:
+                aliases.setdefault((mapping.device, mapping.request), []).append((index, mapping))
                 continue
             grouped.setdefault(mapping.device, []).append((index, mapping))
         for device_name, mappings in grouped.items():
@@ -77,15 +82,46 @@ class CarelProjectEditor(ScadaProjectEditor):
             symbol_group = ((source.symbol_group if source else None) or device_name).strip()
             self.mappings_tree.insert(
                 "", "end", iid=group_iid, text=f"{device_name}   [{symbol_group}]",
-                open=(device_name in open_devices or not open_devices),
-                values=("", "", "", "", "", "", ""),
+                open=(group_iid in open_items or not open_items),
+                values=("", "", "", "", "", "", "", ""),
             )
             for index, mapping in mappings:
+                mapping_iid = f"mapping::{index}"
+                mapping_aliases = aliases.get((mapping.device, mapping.request), [])
+                raw_batch = is_physical_batch_mapping(mapping)
+                symbol_text = ""
+                if not mapping_aliases and mapping.export_symbol and not raw_batch:
+                    try:
+                        symbol_text = atvise_symbol_line(mapping).rstrip(",")
+                    except AtviseSymbolExportError as exc:
+                        symbol_text = f"Export error: {exc}"
                 self.mappings_tree.insert(
-                    group_iid, "end", iid=f"mapping::{index}", text=mapping.name,
+                    group_iid, "end", iid=mapping_iid, text=mapping.name,
+                    open=(mapping_iid in open_items),
                     values=(mapping.request, mapping.register_type, mapping.register, mapping.permissions,
-                            mapping.data_type, mapping.count, "Yes" if mapping.enabled else "No"),
+                            mapping.data_type, mapping.count, "Yes" if mapping.enabled else "No", symbol_text),
                 )
+                for alias_index, alias in mapping_aliases:
+                    try:
+                        alias_symbol = atvise_symbol_line(alias).rstrip(",")
+                    except AtviseSymbolExportError as exc:
+                        alias_symbol = f"Export error: {exc}"
+                    self.mappings_tree.insert(
+                        mapping_iid, "end", iid=f"alias::{alias_index}", text=alias.name,
+                        values=(alias.request, alias.register_type, alias.register, alias.permissions,
+                                alias.symbol_data_type or alias.data_type, alias.count,
+                                "Yes" if alias.enabled else "No", alias_symbol),
+                        tags=("symbol_alias",),
+                    )
+                if raw_batch and not mapping_aliases:
+                    self.mappings_tree.insert(
+                        mapping_iid, "end", iid=f"missing-aliases::{index}",
+                        text="(symbol aliases unavailable)",
+                        values=("", "", "", "", "", "", "", "Open saved YAML or repeat the original source import"),
+                        tags=("missing_aliases",),
+                    )
+        self.mappings_tree.tag_configure("symbol_alias", foreground="#245b8a")
+        self.mappings_tree.tag_configure("missing_aliases", foreground="#a33a2b")
 
     def _mapping_source_device(self, device_name: str):
         return next(

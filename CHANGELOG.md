@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - atvise `.Symbol` export grouped into editable per-source-device folders, defaulting to the source device name.
 - Direct atvise symbol-group display and editing from each source-device expander on the TCP Server Mappings page.
 - Guard against exporting live-imported physical batch blocks as individual atvise symbols when their project-only aliases are unavailable.
+- Nested TCP Server Mapping expanders showing every logical register alias and its exact atvise `.Symbol` line inside each physical batch.
 
 ## [0.7.0] - 2026-09-21
 
