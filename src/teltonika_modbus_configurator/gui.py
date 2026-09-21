@@ -453,7 +453,8 @@ class ProjectEditor(tk.Tk):
     def edit_device(self):
         i = self.selected_device_index()
         if i is None: return
-        d = self.project.devices[i]; v = self._device_dialog(vars_for(d))
+        d = self.project.devices[i]
+        v = self._device_dialog(vars_for(d) | {"symbol_group": d.symbol_group or ""})
         if not v: return
         old = d.name
         d.name, d.slave_id, d.connection, d.period, d.timeout, d.enabled = v["name"], int(v["slave_id"]), v["connection"], int(v["period"]), int(v["timeout"]), bool(v["enabled"])

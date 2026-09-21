@@ -173,7 +173,7 @@ class ExtendedProjectEditor(DeploymentEditor):
         i = self.selected_tcp_client_index()
         if i is None: return
         d = self.project.tcp_clients[i]
-        v = self._tcp_client_dialog(vars_for(d))
+        v = self._tcp_client_dialog(vars_for(d) | {"symbol_group": d.symbol_group or ""})
         if not v: return
         old = d.name
         d.name = v["name"]; d.host = v["host"].strip(); d.port = int(v["port"]); d.unit_id = int(v["unit_id"])
