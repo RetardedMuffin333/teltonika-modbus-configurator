@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from .carel_convert import apply_carel_import_plan, build_carel_import_plan
 from .carel_import import load_carel_xls
@@ -47,6 +47,7 @@ class CarelProjectEditor(ScadaProjectEditor):
         ttk.Button(buttons, text="Add", command=self.add_mapping).pack(side="left")
         ttk.Button(buttons, text="Edit", command=self.edit_mapping).pack(side="left", padx=(6, 0))
         ttk.Button(buttons, text="Delete", command=self.delete_mapping).pack(side="left", padx=(6, 0))
+        ttk.Button(buttons, text="Edit atvise group", command=self.edit_atvise_symbol_group).pack(side="left", padx=(16, 0))
         ttk.Button(buttons, text="Collapse all", command=lambda: self._set_mapping_groups(False)).pack(side="right")
         ttk.Button(buttons, text="Expand all", command=lambda: self._set_mapping_groups(True)).pack(side="right", padx=(0, 6))
 
@@ -60,7 +61,7 @@ class CarelProjectEditor(ScadaProjectEditor):
         open_devices = set()
         for iid in self.mappings_tree.get_children(""):
             if self.mappings_tree.item(iid, "open"):
-                open_devices.add(self.mappings_tree.item(iid, "text"))
+                open_devices.add(iid.removeprefix("device::"))
         self.mappings_tree.delete(*self.mappings_tree.get_children())
         grouped = {}
         for index, mapping in enumerate(self.project.mappings):
@@ -72,13 +73,77 @@ class CarelProjectEditor(ScadaProjectEditor):
             grouped.setdefault(mapping.device, []).append((index, mapping))
         for device_name, mappings in grouped.items():
             group_iid = f"device::{device_name}"
-            self.mappings_tree.insert("", "end", iid=group_iid, text=device_name, open=(device_name in open_devices or not open_devices), values=("", "", "", "", "", "", ""))
+            source = self._mapping_source_device(device_name)
+            symbol_group = ((source.symbol_group if source else None) or device_name).strip()
+            self.mappings_tree.insert(
+                "", "end", iid=group_iid, text=f"{device_name}   [{symbol_group}]",
+                open=(device_name in open_devices or not open_devices),
+                values=("", "", "", "", "", "", ""),
+            )
             for index, mapping in mappings:
                 self.mappings_tree.insert(
                     group_iid, "end", iid=f"mapping::{index}", text=mapping.name,
                     values=(mapping.request, mapping.register_type, mapping.register, mapping.permissions,
                             mapping.data_type, mapping.count, "Yes" if mapping.enabled else "No"),
                 )
+
+    def _mapping_source_device(self, device_name: str):
+        return next(
+            (source for source in (*self.project.devices, *self.project.tcp_clients) if source.name == device_name),
+            None,
+        )
+
+    def _selected_mapping_device_name(self):
+        selection = self.mappings_tree.selection()
+        if not selection:
+            return None
+        iid = selection[0]
+        if iid.startswith("mapping::"):
+            iid = self.mappings_tree.parent(iid)
+        if not iid.startswith("device::"):
+            return None
+        return iid.split("::", 1)[1]
+
+    def edit_atvise_symbol_group(self):
+        device_name = self._selected_mapping_device_name()
+        if device_name is None:
+            messagebox.showinfo(
+                "atvise symbol group",
+                "Select a source-device expander or one of its TCP mappings first.",
+                parent=self,
+            )
+            return
+        source = self._mapping_source_device(device_name)
+        if source is None:
+            messagebox.showerror(
+                "atvise symbol group",
+                f"Source device {device_name!r} could not be found.",
+                parent=self,
+            )
+            return
+        current = source.symbol_group or source.name
+        value = simpledialog.askstring(
+            "atvise symbol group",
+            "Folder name written as [group] in the exported .Symbol file.\n"
+            "Leave empty to use the source device name:",
+            initialvalue=current,
+            parent=self,
+        )
+        if value is None:
+            return
+        value = value.strip()
+        if any(ch in value for ch in "[]\r\n"):
+            messagebox.showerror(
+                "Invalid atvise symbol group",
+                "The group name cannot contain [, ], or a line break.",
+                parent=self,
+            )
+            return
+        source.symbol_group = value or None
+        self.mark_dirty()
+        self.refresh_mappings()
+        shown = source.symbol_group or source.name
+        self.status.set(f"atvise symbol group for {source.name}: [{shown}]")
 
     def _mapping_index_from_selection(self):
         selection = self.mappings_tree.selection()
