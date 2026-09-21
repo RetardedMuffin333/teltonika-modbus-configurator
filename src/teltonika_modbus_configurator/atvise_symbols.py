@@ -26,6 +26,26 @@ class AtviseSymbolExportError(ValueError):
     """Raised when a project mapping cannot be represented safely in a symbol file."""
 
 
+def _looks_like_physical_batch(mapping: ServerMapping) -> bool:
+    """Return whether a mapping is a raw deployed block, not one SCADA value.
+
+    A live RutOS import cannot restore the symbol-only aliases that existed in
+    the editor project because those aliases are intentionally not deployed.
+    Exporting the remaining physical block as one symbol would be misleading.
+    """
+    batch_name = mapping.name.startswith("Batch_FC") or mapping.request.startswith("Batch_FC")
+    raw_multi_value_block = mapping.count > 1 and mapping.symbol_data_type is None
+    return mapping.deploy and (batch_name or raw_multi_value_block)
+
+
+def physical_batches_without_symbol_aliases(project: Project) -> list[ServerMapping]:
+    """Find raw batches that would otherwise be mistaken for atvise symbols."""
+    return [
+        mapping for mapping in project.mappings
+        if mapping.export_symbol and _looks_like_physical_batch(mapping)
+    ]
+
+
 def _prefix_for_mapping(mapping: ServerMapping) -> str:
     register_type = mapping.register_type
     data_type = mapping.symbol_data_type or mapping.data_type
@@ -104,6 +124,17 @@ def export_atvise_symbols(
     By default only enabled TCP mappings are exported because disabled mappings
     are not expected to be available through the RutOS Modbus TCP Server.
     """
+
+    raw_batches = physical_batches_without_symbol_aliases(project)
+    if raw_batches:
+        examples = ", ".join(mapping.name for mapping in raw_batches[:3])
+        suffix = "..." if len(raw_batches) > 3 else ""
+        raise AtviseSymbolExportError(
+            f"Cannot export {len(raw_batches)} physical batch mapping(s) as individual atvise symbols "
+            f"({examples}{suffix}). The project does not contain their symbol aliases. "
+            "Open the saved project YAML or repeat the original Carel/atvise symbol import; "
+            "a live Teltonika import can restore physical batches but not the original symbol names."
+        )
 
     mappings = [
         m for m in project.mappings

@@ -107,6 +107,30 @@ def test_can_export_legacy_flat_symbol_file():
     assert export_atvise_symbols(project, group_by_device=False) == "[]\nsym-Temperature=HR1025,\n"
 
 
+def test_rejects_physical_batches_when_symbol_aliases_are_missing():
+    project = Project(mappings=[
+        ServerMapping(
+            "Batch_FC03_1_100", "PLC", "Batch_FC03_1_100", 1025,
+            "holding_register", count=100, data_type="uint16",
+        )
+    ])
+
+    with pytest.raises(AtviseSymbolExportError, match="saved project YAML"):
+        export_atvise_symbols(project)
+
+
+def test_rejects_live_imported_multi_value_block_with_nonstandard_batch_name():
+    project = Project(mappings=[
+        ServerMapping(
+            "Status_Batch", "RDF_Test", "Status_Batch", 1025,
+            "input_register", count=6, data_type="int16",
+        )
+    ])
+
+    with pytest.raises(AtviseSymbolExportError, match="symbol aliases"):
+        export_atvise_symbols(project)
+
+
 def test_rejects_unsafe_symbol_group():
     from teltonika_modbus_configurator.models import Device
 
