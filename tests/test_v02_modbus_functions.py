@@ -58,6 +58,35 @@ def test_fc05_coil_mapping_generation():
     assert "option modbus_type '1'" in uci.modbus_server
 
 
+def test_fc06_rejects_32bit_value_types_and_requires_fc16():
+    for data_type in ("int32", "uint32", "float32"):
+        request = Request(
+            "Setpoint", FunctionCode.WRITE_SINGLE_HOLDING_REGISTER, 7,
+            data_type=data_type, byte_order="1234", enabled=False, values="0",
+        )
+        mapping = ServerMapping(
+            "Setpoint", "D1", "Setpoint", 20000, "holding_register",
+            permissions="w", data_type=data_type,
+        )
+
+        errors = [message.message for message in validate_project(base_project(request, mapping))]
+
+        assert any(f"FC06 cannot write {data_type}; use FC16" in error for error in errors)
+
+
+def test_fc16_accepts_float32_write_target():
+    request = Request(
+        "Setpoint", FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS, 7,
+        data_type="float32", byte_order="1234", enabled=False, values="0",
+    )
+    mapping = ServerMapping(
+        "Setpoint", "D1", "Setpoint", 20000, "holding_register",
+        permissions="w", data_type="float32",
+    )
+
+    assert validate_project(base_project(request, mapping)) == []
+
+
 def test_direction_and_register_area_validation():
     request = Request("R", FunctionCode.READ_INPUT_REGISTERS, 515)
     mapping = ServerMapping("M", "D1", "R", 1200, "holding_register", permissions="w")
