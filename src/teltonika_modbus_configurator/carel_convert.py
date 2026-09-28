@@ -1,4 +1,4 @@
-"""Convert parsed register-table rows into RutOS TCP-client requests and mappings."""
+"""Convert parsed register-table rows into RutOS client requests and mappings."""
 
 from __future__ import annotations
 
@@ -49,11 +49,37 @@ def is_carel_readwrite(row: CarelImportRow) -> bool:
     return _key(row.access) in {"rw", "readwrite", "readwrit"}
 
 
-def build_carel_import_plan(project: Project, rows: list[CarelImportRow], *, tcp_device_name: str, add_one_to_index: bool = True, mapping_start: int = 1025) -> list[CarelPlannedItem]:
-    """Build a non-destructive import plan for one existing Modbus TCP client."""
-    device = next((d for d in project.tcp_clients if d.name == tcp_device_name), None)
+def _target_device(project: Project, device_name: str):
+    return next(
+        (device for device in (*project.devices, *project.tcp_clients) if device.name == device_name),
+        None,
+    )
+
+
+def _device_name(*, device_name: str | None, tcp_device_name: str | None) -> str:
+    """Resolve the target name while retaining the pre-v0.8 public keyword."""
+    target = device_name or tcp_device_name
+    if not target:
+        raise ValueError("Select a Modbus RTU device or TCP client first.")
+    if device_name and tcp_device_name and device_name != tcp_device_name:
+        raise ValueError("Conflicting Carel import target device names.")
+    return target
+
+
+def build_carel_import_plan(
+    project: Project,
+    rows: list[CarelImportRow],
+    *,
+    device_name: str | None = None,
+    tcp_device_name: str | None = None,
+    add_one_to_index: bool = True,
+    mapping_start: int = 1025,
+) -> list[CarelPlannedItem]:
+    """Build a non-destructive import plan for an existing RTU or TCP client."""
+    target_name = _device_name(device_name=device_name, tcp_device_name=tcp_device_name)
+    device = _target_device(project, target_name)
     if device is None:
-        raise ValueError(f"Modbus TCP client {tcp_device_name!r} does not exist.")
+        raise ValueError(f"Modbus RTU device or TCP client {target_name!r} does not exist.")
 
     existing_request_names = {r.name for r in device.requests}
     existing_mapping_names = {m.name for m in project.mappings}
@@ -81,7 +107,7 @@ def build_carel_import_plan(project: Project, rows: list[CarelImportRow], *, tcp
         request = Request(name=row.name, function=function, register=source_index + (1 if add_one_to_index else 0), count=1, data_type=data_type, byte_order=byte_order, enabled=True)
         width = register_value_width(data_type, register_type)
         server_register = first_free_register_range(shadow, register_type=register_type, width=width, default=mapping_start)
-        mapping = ServerMapping(name=row.name, device=tcp_device_name, request=row.name, register=server_register, register_type=register_type, enabled=True, permissions="r", data_type=data_type, count=1)
+        mapping = ServerMapping(name=row.name, device=target_name, request=row.name, register=server_register, register_type=register_type, enabled=True, permissions="r", data_type=data_type, count=1)
         shadow.mappings.append(mapping); planned_request_names.add(row.name); planned_mapping_names.add(row.name)
         result.append(CarelPlannedItem(row, request, mapping, "Ready"))
     return result
@@ -120,7 +146,8 @@ def apply_carel_import_plan(
     project: Project,
     items: list[CarelPlannedItem],
     *,
-    tcp_device_name: str,
+    device_name: str | None = None,
+    tcp_device_name: str | None = None,
     mapping_start: int = 1025,
     create_write_companions: bool = False,
     write_mapping_start: int = CAREL_AUTO_WRITE_START,
@@ -132,9 +159,10 @@ def apply_carel_import_plan(
     rows are writable. FC selection is delegated to the hardware-verified SCADA
     helper: BOOL->FC05, 8/16-bit holding->FC06, 32-bit holding->FC16.
     """
-    device = next((d for d in project.tcp_clients if d.name == tcp_device_name), None)
+    target_name = _device_name(device_name=device_name, tcp_device_name=tcp_device_name)
+    device = _target_device(project, target_name)
     if device is None:
-        raise ValueError(f"Modbus TCP client {tcp_device_name!r} does not exist.")
+        raise ValueError(f"Modbus RTU device or TCP client {target_name!r} does not exist.")
     ready = [item for item in items if item.request is not None and item.mapping is not None]
     packed = repack_carel_import_items(project, ready, mapping_start=mapping_start)
     semantic_items = list(packed)
@@ -158,7 +186,7 @@ def apply_carel_import_plan(
                 continue
             create_scada_write_target_from_definition(
                 project,
-                device_name=tcp_device_name,
+                device_name=target_name,
                 read_request=item.request,
                 feedback_mapping=final_mapping_by_name[item.mapping.name],
                 write_block_start=write_mapping_start,
