@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 0.8.0.dev0
+
+### Added
+
+- First Project Wizard for guided RTU-only, TCP-only, and mixed gateway setup.
+- Wizard setup for the upstream TCP Server and the first RTU/TCP source devices.
+- Optional hand-off from the wizard to Register Table or atvise Symbol import.
+- Live Modbus write testing for configured and ad-hoc FC05/FC06/FC15/FC16 commands with explicit `WRITE` confirmation.
+- RutOS-compatible dropdowns for serial device, baudrate, data bits, parity, and stop bits.
+- Editable common-value dropdown suggestions for TCP port, Unit ID, polling period, and timeout.
+- atvise `.Symbol` export grouped into editable per-source-device folders, defaulting to the source device name.
+- Direct atvise symbol-group display and editing from each source-device expander on the TCP Server Mappings page.
+- Guard against exporting live-imported physical batch blocks as individual atvise symbols when their project-only aliases are unavailable.
+- Nested TCP Server Mapping expanders showing every logical register alias and its exact atvise `.Symbol` line inside each physical batch.
+- Manual and automatic conversion of existing individual FC01-FC04 requests into optimized physical batches while preserving original names as atvise symbol aliases.
+- Optional SCADA write-companion creation in atvise Symbol imports, including alongside batched reads; Carel batched imports now support the same combination.
+
 ## [0.7.0] - 2026-09-21
 
 Seventh release baseline, focused on scalable batched Modbus reads, reliable atvise Connect integration, consistent large-project imports, responsive live deployment, and project diagnostics.

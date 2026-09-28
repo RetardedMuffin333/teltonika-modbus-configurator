@@ -24,7 +24,11 @@ from .yaml_writer import dump_project
 
 
 REGISTER_TYPES = ("coil", "discrete_input", "holding_register", "input_register")
-PARITIES = ("none", "even", "odd")
+SERIAL_DEVICES = ("/dev/rs485", "/dev/rs232")
+BAUDRATES = (300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200)
+DATA_BITS = (5, 6, 7, 8)
+STOP_BITS = (1, 2)
+PARITIES = ("none", "even", "odd", "mark", "space")
 
 
 class FormDialog(simpledialog.Dialog):
@@ -47,9 +51,9 @@ class FormDialog(simpledialog.Dialog):
                 var = tk.BooleanVar(value=bool(value))
                 widget = ttk.Checkbutton(master, variable=var)
                 widget._tmc_var = var
-            elif kind == "choice":
+            elif kind in {"choice", "suggestion"}:
                 var = tk.StringVar(value=str(value or choices[0]))
-                widget = ttk.Combobox(master, textvariable=var, values=choices, state="readonly")
+                widget = ttk.Combobox(master, textvariable=var, values=choices, state="readonly" if kind == "choice" else "normal")
                 widget._tmc_var = var
             else:
                 var = tk.StringVar(value=str(value))
@@ -90,9 +94,9 @@ class FormDialog(simpledialog.Dialog):
             if kind == "bool":
                 var = tk.BooleanVar(value=bool(value))
                 widget = ttk.Checkbutton(master, variable=var)
-            elif kind == "choice":
+            elif kind in {"choice", "suggestion"}:
                 var = tk.StringVar(value=str(value or choices[0]))
-                widget = ttk.Combobox(master, textvariable=var, values=choices, state="readonly")
+                widget = ttk.Combobox(master, textvariable=var, values=choices, state="readonly" if kind == "choice" else "normal")
             else:
                 var = tk.StringVar(value=str(value))
                 widget = ttk.Entry(master, textvariable=var, width=34)
@@ -394,9 +398,9 @@ class ProjectEditor(tk.Tk):
 
     def _connection_dialog(self, initial=None):
         dlg = FormDialog(self, "Connection", [
-            ("name", "Name", "text", None), ("device", "Device", "text", None),
-            ("baudrate", "Baudrate", "text", None), ("databits", "Data bits", "text", None),
-            ("parity", "Parity", "choice", PARITIES), ("stopbits", "Stop bits", "text", None),
+            ("name", "Name", "text", None), ("device", "Device", "choice", SERIAL_DEVICES),
+            ("baudrate", "Baudrate", "choice", BAUDRATES), ("databits", "Data bits", "choice", DATA_BITS),
+            ("parity", "Parity", "choice", PARITIES), ("stopbits", "Stop bits", "choice", STOP_BITS),
         ], initial)
         return dlg.values
 
@@ -432,6 +436,7 @@ class ProjectEditor(tk.Tk):
         choices = tuple(c.name for c in self.project.connections) or ("",)
         dlg = FormDialog(self, "Device", [
             ("name", "Name", "text", None), ("slave_id", "Slave ID", "text", None),
+            ("symbol_group", "atvise symbol group", "text", None),
             ("connection", "Connection", "choice", choices), ("period", "Period", "text", None),
             ("timeout", "Timeout", "text", None), ("enabled", "Enabled", "bool", None),
         ], initial)
@@ -440,18 +445,20 @@ class ProjectEditor(tk.Tk):
     def add_device(self):
         if not self.project.connections:
             messagebox.showerror("No connection", "Create a serial connection first."); return
-        v = self._device_dialog({"slave_id": 1, "connection": self.project.connections[0].name, "period": 10, "timeout": 1, "enabled": True})
+        v = self._device_dialog({"slave_id": 1, "symbol_group": "", "connection": self.project.connections[0].name, "period": 10, "timeout": 1, "enabled": True})
         if not v: return
-        self.project.devices.append(Device(v["name"], int(v["slave_id"]), v["connection"], int(v["period"]), int(v["timeout"]), bool(v["enabled"]), []))
+        self.project.devices.append(Device(v["name"], int(v["slave_id"]), v["connection"], int(v["period"]), int(v["timeout"]), bool(v["enabled"]), [], symbol_group=v["symbol_group"].strip() or None))
         self.mark_dirty(); self.refresh_all()
 
     def edit_device(self):
         i = self.selected_device_index()
         if i is None: return
-        d = self.project.devices[i]; v = self._device_dialog(vars_for(d))
+        d = self.project.devices[i]
+        v = self._device_dialog(vars_for(d) | {"symbol_group": d.symbol_group or ""})
         if not v: return
         old = d.name
         d.name, d.slave_id, d.connection, d.period, d.timeout, d.enabled = v["name"], int(v["slave_id"]), v["connection"], int(v["period"]), int(v["timeout"]), bool(v["enabled"])
+        d.symbol_group = v["symbol_group"].strip() or None
         if old != d.name:
             for m in self.project.mappings:
                 if m.device == old: m.device = d.name

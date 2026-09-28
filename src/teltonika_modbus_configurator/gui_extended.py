@@ -154,28 +154,31 @@ class ExtendedProjectEditor(DeploymentEditor):
 
     def _tcp_client_dialog(self, initial=None):
         dlg = FormDialog(self, "Modbus TCP Client", [
-            ("name", "Name", "text", None), ("host", "Host / IP", "text", None), ("port", "Port", "text", None),
-            ("unit_id", "Unit / Server ID", "text", None), ("period", "Polling period", "text", None),
-            ("timeout", "Timeout", "text", None), ("enabled", "Enabled", "bool", None),
+            ("name", "Name", "text", None), ("symbol_group", "atvise symbol group", "text", None),
+            ("host", "Host / IP", "text", None), ("port", "Port", "suggestion", (502, 1502)),
+            ("unit_id", "Unit / Server ID", "suggestion", tuple(range(0, 11))), ("period", "Polling period", "suggestion", (1, 2, 5, 10, 30, 60)),
+            ("timeout", "Timeout", "suggestion", (1, 2, 5, 10, 30)), ("enabled", "Enabled", "bool", None),
         ], initial or {})
         return dlg.values
 
     def add_tcp_client(self):
-        v = self._tcp_client_dialog({"host": "", "port": 502, "unit_id": 1, "period": 10, "timeout": 1, "enabled": False})
+        v = self._tcp_client_dialog({"symbol_group": "", "host": "", "port": 502, "unit_id": 1, "period": 10, "timeout": 1, "enabled": False})
         if not v: return
         self.project.tcp_clients.append(TcpClientDevice(name=v["name"], host=v["host"].strip(), port=int(v["port"]), unit_id=int(v["unit_id"]),
-                                                        period=int(v["period"]), timeout=int(v["timeout"]), enabled=bool(v["enabled"])))
+                                                        period=int(v["period"]), timeout=int(v["timeout"]), enabled=bool(v["enabled"]),
+                                                        symbol_group=v["symbol_group"].strip() or None))
         self.mark_dirty(); self.refresh_all()
 
     def edit_tcp_client(self):
         i = self.selected_tcp_client_index()
         if i is None: return
         d = self.project.tcp_clients[i]
-        v = self._tcp_client_dialog(vars_for(d))
+        v = self._tcp_client_dialog(vars_for(d) | {"symbol_group": d.symbol_group or ""})
         if not v: return
         old = d.name
         d.name = v["name"]; d.host = v["host"].strip(); d.port = int(v["port"]); d.unit_id = int(v["unit_id"])
         d.period = int(v["period"]); d.timeout = int(v["timeout"]); d.enabled = bool(v["enabled"])
+        d.symbol_group = v["symbol_group"].strip() or None
         if old != d.name:
             for m in self.project.mappings:
                 if m.device == old: m.device = d.name

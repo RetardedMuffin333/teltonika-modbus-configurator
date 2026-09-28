@@ -71,6 +71,9 @@ class Device:
     enabled: bool = True
     requests: list[Request] = field(default_factory=list)
     source_id: str | None = None
+    # Folder/section used by atvise Connect .Symbol export.  An empty value
+    # falls back to the source device name.
+    symbol_group: str | None = None
 
 
 @dataclass(slots=True)
@@ -96,6 +99,9 @@ class TcpClientDevice:
     source_id: str | None = None
     raw_options: dict[str, str] = field(default_factory=dict)
     unit_id: int | None = None
+    # Folder/section used by atvise Connect .Symbol export.  An empty value
+    # falls back to the source device name.
+    symbol_group: str | None = None
 
     def __setattr__(self, name: str, value) -> None:
         if name == "server_id":

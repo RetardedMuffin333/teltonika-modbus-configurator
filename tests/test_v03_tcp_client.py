@@ -86,6 +86,16 @@ def test_tcp_client_yaml_roundtrip_preserves_source(tmp_path):
     assert generated.modbus_server == SERVER
 
 
+def test_tcp_client_yaml_roundtrip_preserves_symbol_group(tmp_path):
+    project = Project(tcp_clients=[TcpClientDevice("ChillerTCP", symbol_group="Plant_room")])
+    path = tmp_path / "symbol-group.yaml"
+    path.write_text(dump_project(project), encoding="utf-8")
+
+    loaded = load_project(path)
+
+    assert loaded.tcp_clients[0].symbol_group == "Plant_room"
+
+
 def test_fresh_tcp_client_generation_uses_verified_uci_schema():
     request = Request("Temp", FunctionCode.READ_INPUT_REGISTERS, 10)
     client = TcpClientDevice("ChillerTCP", server_id=117, host="10.33.22.50", requests=[request])

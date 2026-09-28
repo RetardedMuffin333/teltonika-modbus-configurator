@@ -33,7 +33,8 @@ def _source_device(project: Project, device_name: str):
 
 
 def _write_companion_details(read_request: Request) -> tuple[FunctionCode, str]:
-    if read_request.count != 1:
+    valid_counts = {1, 2} if read_request.data_type in _32BIT_TYPES else {1}
+    if read_request.count not in valid_counts:
         raise ValueError("Write-request companions currently support one typed value per request.")
     if read_request.function == FunctionCode.READ_HOLDING_REGISTERS:
         function = FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS if read_request.data_type in _32BIT_TYPES else FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
@@ -136,6 +137,64 @@ def _feedback_mapping_for_request(
     return mapping
 
 
+def create_scada_write_target_from_definition(
+    project: Project,
+    *,
+    device_name: str,
+    read_request: Request,
+    feedback_mapping: ServerMapping,
+    write_block_start: int | None = None,
+) -> ScadaWriteTarget:
+    """Create a write target from a semantic read definition and its final alias.
+
+    Import batching replaces individual read requests with one raw block, but
+    the original typed request still contains everything required to build its
+    independent FC05/FC06/FC16 write companion.
+    """
+    source = _source_device(project, device_name)
+    if source is None:
+        raise ValueError(f"Unknown source device {device_name!r}.")
+    write_function, required_mapping_type = _write_companion_details(read_request)
+    if feedback_mapping.register_type != required_mapping_type:
+        raise ValueError(f"Feedback must be mapped to TCP {required_mapping_type}.")
+    write_name = f"{read_request.name}_w"
+    if any(request.name == write_name for request in source.requests):
+        raise ValueError(f"Request {write_name!r} already exists on {device_name}.")
+    if any(mapping.name == write_name for mapping in project.mappings):
+        raise ValueError(f"TCP mapping {write_name!r} already exists.")
+
+    semantic_type = feedback_mapping.symbol_data_type or read_request.data_type
+    width = register_value_width(semantic_type, required_mapping_type)
+    start = WRITE_MAPPING_START if write_block_start is None else max(WRITE_MAPPING_START, int(write_block_start))
+    tcp_register = first_free_register_range(
+        project, register_type=required_mapping_type, width=width, default=start
+    )
+    write_request = Request(
+        name=write_name,
+        function=write_function,
+        register=read_request.register,
+        count=1,
+        data_type=read_request.data_type,
+        byte_order=read_request.byte_order,
+        enabled=False,
+        values="0",
+    )
+    write_mapping = ServerMapping(
+        name=write_name,
+        device=device_name,
+        request=write_name,
+        register=tcp_register,
+        register_type=required_mapping_type,
+        enabled=True,
+        permissions="w",
+        data_type=semantic_type,
+        count=1,
+    )
+    source.requests.append(write_request)
+    project.mappings.append(write_mapping)
+    return ScadaWriteTarget(write_request, write_mapping, feedback_mapping)
+
+
 def create_scada_write_target(
     project: Project,
     *,
@@ -156,45 +215,17 @@ def create_scada_write_target(
     if read_request is None:
         raise ValueError(f"Unknown request {device_name}/{read_request_name}.")
 
-    write_function, required_mapping_type = _write_companion_details(read_request)
-    write_name = f"{read_request.name}_w"
-    if any(r.name == write_name for r in source.requests):
-        raise ValueError(f"Request {write_name!r} already exists on {device_name}.")
-    if any(m.name == write_name for m in project.mappings):
-        raise ValueError(f"TCP mapping {write_name!r} already exists.")
-
+    _write_function, required_mapping_type = _write_companion_details(read_request)
     feedback_mapping = _feedback_mapping_for_request(
         project,
         device_name=device_name,
         request=read_request,
         register_type=required_mapping_type,
     )
-    width = mapping_width(feedback_mapping)
-    start = WRITE_MAPPING_START if write_block_start is None else max(WRITE_MAPPING_START, int(write_block_start))
-    tcp_register = first_free_register_range(project, register_type=required_mapping_type, width=width, default=start)
-
-    write_request = Request(
-        name=write_name,
-        function=write_function,
-        register=read_request.register,
-        count=1,
-        data_type=read_request.data_type,
-        byte_order=read_request.byte_order,
-        enabled=False,
-        values="0",
+    return create_scada_write_target_from_definition(
+        project,
+        device_name=device_name,
+        read_request=read_request,
+        feedback_mapping=feedback_mapping,
+        write_block_start=write_block_start,
     )
-    write_mapping = ServerMapping(
-        name=write_name,
-        device=device_name,
-        request=write_name,
-        register=tcp_register,
-        register_type=required_mapping_type,
-        enabled=True,
-        permissions="w",
-        data_type=feedback_mapping.data_type,
-        count=feedback_mapping.count,
-    )
-
-    source.requests.append(write_request)
-    project.mappings.append(write_mapping)
-    return ScadaWriteTarget(write_request, write_mapping, feedback_mapping)

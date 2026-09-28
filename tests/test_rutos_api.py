@@ -104,5 +104,22 @@ def test_serial_test_requires_imported_server_configuration_id():
         raise AssertionError("Expected missing RTU config ID to be rejected")
 
 
+def test_write_payload_places_values_in_rutos_reg_count(monkeypatch):
+    target = LiveTestTarget(
+        transport="tcp", device_name="Carel", device_id=1,
+        request=Request("Setpoint", FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS, 7, data_type="float32", byte_order="1234", enabled=False, values="21.5"),
+        host="192.168.2.20", port=502, timeout=1, config_id="9",
+    )
+    client = RutOSApiClient("192.168.2.1", "admin", "secret")
+    captured = {}
+    monkeypatch.setattr(client, "post", lambda endpoint, data: captured.update(endpoint=endpoint, data=data) or {"success": True})
+
+    client.test_tcp(target)
+
+    assert captured["data"]["function"] == "16"
+    assert captured["data"]["reg_count"] == "21.5"
+    assert captured["data"]["data_type"] == "32bit_float1234"
+
+
 def test_display_value_normalizes_rut956_bracketed_result():
     assert _display_value("[8.312500]") == "8.312500"

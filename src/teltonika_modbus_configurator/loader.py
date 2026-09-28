@@ -127,6 +127,7 @@ def load_project(path: str | Path) -> Project:
         enabled=_bool(i.get("enabled"), True),
         requests=[_request(r) for r in i.get("requests", [])],
         source_id=None if i.get("source_id") is None else str(i["source_id"]),
+        symbol_group=None if i.get("symbol_group") is None else str(i["symbol_group"]),
     ) for i in raw_devices]
 
     tcp_clients = [TcpClientDevice(
@@ -140,6 +141,7 @@ def load_project(path: str | Path) -> Project:
         requests=[_request(r) for r in i.get("requests", [])],
         source_id=None if i.get("source_id") is None else str(i["source_id"]),
         raw_options={str(k): str(v) for k, v in (i.get("raw_options", {}) or {}).items()},
+        symbol_group=None if i.get("symbol_group") is None else str(i["symbol_group"]),
     ) for i in data.get("tcp_clients", []) or []]
 
     mappings = [ServerMapping(

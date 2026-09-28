@@ -179,6 +179,26 @@ def test_batched_carel_reads_share_requests_and_use_tag_offsets():
     assert "Batch_FC03" not in symbols
 
 
+def test_batched_carel_import_can_also_create_write_companion():
+    project = _project()
+    rows = [
+        CarelImportRow("Documentation", 2, "Setpoint", "10", "HoldingRegister", "1", "UInt", "ReadWrite"),
+    ]
+    plan = build_carel_import_plan(project, rows, tcp_device_name="Carel", add_one_to_index=False)
+
+    read_count, write_count = apply_carel_import_plan(
+        project,
+        plan,
+        tcp_device_name="Carel",
+        batch_reads=True,
+        create_write_companions=True,
+    )
+
+    assert (read_count, write_count) == (1, 1)
+    assert any(request.name == "Setpoint_w" and request.function == FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
+               for request in project.tcp_clients[0].requests)
+
+
 def test_batched_carel_reads_split_before_100_register_limit():
     project = _project()
     rows = [

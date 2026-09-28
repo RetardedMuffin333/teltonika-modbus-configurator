@@ -1,4 +1,4 @@
-from teltonika_modbus_configurator.models import Device, Project, SerialConnection, TcpClientDevice
+from teltonika_modbus_configurator.models import Device, FunctionCode, Project, SerialConnection, TcpClientDevice
 from teltonika_modbus_configurator.symbol_import import (
     apply_symbol_import_plan,
     build_symbol_import_plan,
@@ -133,3 +133,33 @@ def test_symbol_import_can_use_same_physical_batch_model_as_register_tables():
     assert "sym-Temperature=HRR1025," in symbols
     assert "sym-Mode=HR1027," in symbols
     assert "sym-Scheduler_Day=HRD1035," in symbols
+
+
+def test_batched_symbol_import_can_create_individual_write_companions():
+    project = Project(tcp_clients=[TcpClientDevice(name="PLC", host="10.0.0.2")])
+    from teltonika_modbus_configurator.symbol_import import SymbolRow
+    rows = [
+        SymbolRow(1, "Temperature", "HRR", 10),
+        SymbolRow(2, "Mode", "HR", 12),
+        SymbolRow(3, "Enable", "DA", 20),
+        SymbolRow(4, "ReadOnly", "IR", 30),
+    ]
+    plan = build_symbol_import_plan(project, rows, device_name="PLC", mapping_start=1025)
+
+    assert apply_symbol_import_plan(
+        project,
+        plan,
+        device_name="PLC",
+        mapping_start=1025,
+        batch_reads=True,
+        create_write_companions=True,
+    ) == 4
+
+    writes = {request.name: request for request in project.tcp_clients[0].requests if request.function.is_write}
+    assert set(writes) == {"Temperature_w", "Mode_w", "Enable_w"}
+    assert writes["Temperature_w"].function == FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
+    assert writes["Mode_w"].function == FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
+    assert writes["Enable_w"].function == FunctionCode.WRITE_SINGLE_COIL
+    write_mappings = {mapping.name: mapping for mapping in project.mappings if mapping.permissions == "w"}
+    assert set(write_mappings) == set(writes)
+    assert all(mapping.register >= 20000 for mapping in write_mappings.values())

@@ -8,7 +8,10 @@ from .carel_import import CarelImportRow
 from .models import FunctionCode, Project, Request, ServerMapping
 from .read_batching import batch_read_items
 from .register_allocator import first_free_register_range, register_value_width
-from .scada_write import CAREL_AUTO_WRITE_START, create_scada_write_target
+from .scada_write import (
+    CAREL_AUTO_WRITE_START,
+    create_scada_write_target_from_definition,
+)
 
 
 @dataclass(slots=True)
@@ -134,8 +137,7 @@ def apply_carel_import_plan(
         raise ValueError(f"Modbus TCP client {tcp_device_name!r} does not exist.")
     ready = [item for item in items if item.request is not None and item.mapping is not None]
     packed = repack_carel_import_items(project, ready, mapping_start=mapping_start)
-    if batch_reads and create_write_companions:
-        raise ValueError("Batched reads and automatic SCADA write companions cannot be combined yet.")
+    semantic_items = list(packed)
     if batch_reads:
         block_requests, block_mappings, packed = batch_carel_read_items(device, packed)
         device.requests.extend(block_requests)
@@ -146,15 +148,19 @@ def apply_carel_import_plan(
 
     write_count = 0
     if create_write_companions:
-        for item in packed:
+        final_mapping_by_name = {
+            item.mapping.name: item.mapping for item in packed if item.mapping is not None
+        }
+        for item in semantic_items:
             if not is_carel_readwrite(item.source) or item.mapping is None or item.request is None:
                 continue
             if item.mapping.register_type not in {"coil", "holding_register"}:
                 continue
-            create_scada_write_target(
+            create_scada_write_target_from_definition(
                 project,
                 device_name=tcp_device_name,
-                read_request_name=item.request.name,
+                read_request=item.request,
+                feedback_mapping=final_mapping_by_name[item.mapping.name],
                 write_block_start=write_mapping_start,
             )
             write_count += 1

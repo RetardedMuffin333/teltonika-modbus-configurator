@@ -13,6 +13,7 @@ import re
 from .models import FunctionCode, Project, Request, ServerMapping
 from .read_batching import batch_read_items
 from .register_allocator import first_free_register_range, register_value_width
+from .scada_write import WRITE_MAPPING_START, create_scada_write_target_from_definition
 
 
 @dataclass(slots=True)
@@ -173,11 +174,14 @@ def apply_symbol_import_plan(
     device_name: str,
     mapping_start: int = 1025,
     batch_reads: bool = False,
+    create_write_companions: bool = False,
+    write_mapping_start: int = WRITE_MAPPING_START,
 ) -> int:
     """Apply selected ready rows to an existing RTU or TCP target device."""
     requests = _target_requests(project, device_name)
     ready = [item for item in items if item.request is not None and item.mapping is not None]
     packed = repack_symbol_import_items(project, ready, mapping_start=mapping_start)
+    semantic_items = list(packed)
     if batch_reads:
         block_requests, block_mappings, packed = batch_read_items(requests, packed)
         requests.extend(block_requests)
@@ -185,4 +189,20 @@ def apply_symbol_import_plan(
     else:
         requests.extend(item.request for item in packed if item.request is not None)
     project.mappings.extend(item.mapping for item in packed if item.mapping is not None)
+    if create_write_companions:
+        final_mapping_by_name = {
+            item.mapping.name: item.mapping for item in packed if item.mapping is not None
+        }
+        for item in semantic_items:
+            if item.request is None or item.mapping is None:
+                continue
+            if item.mapping.register_type not in {"coil", "holding_register"}:
+                continue
+            create_scada_write_target_from_definition(
+                project,
+                device_name=device_name,
+                read_request=item.request,
+                feedback_mapping=final_mapping_by_name[item.mapping.name],
+                write_block_start=write_mapping_start,
+            )
     return len(packed)

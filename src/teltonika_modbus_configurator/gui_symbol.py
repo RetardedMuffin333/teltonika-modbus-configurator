@@ -45,20 +45,27 @@ class SymbolPreviewWindow(tk.Toplevel):
             text="Symbol addresses are treated as physical device registers. Connection IP/slave/serial settings come from the selected existing device.",
         ).grid(row=1, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
 
+        self.write_companions_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            options,
+            text="Create SCADA write companions for selected DA/HR/HRR/HRD symbols",
+            variable=self.write_companions_var,
+        ).grid(row=2, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
+
         self.read_mode_var = tk.StringVar(value="batched")
-        ttk.Label(options, text="Read import mode:").grid(row=2, column=0, padx=6, pady=(0, 6), sticky="w")
+        ttk.Label(options, text="Read import mode:").grid(row=3, column=0, padx=6, pady=(0, 6), sticky="w")
         ttk.Radiobutton(
             options,
             text="Batched (recommended; FC03/FC04 up to 100 registers, FC01/FC02 up to 1000 bits)",
             variable=self.read_mode_var,
             value="batched",
-        ).grid(row=2, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=3, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
         ttk.Radiobutton(
             options,
             text="Register by register",
             variable=self.read_mode_var,
             value="individual",
-        ).grid(row=2, column=5, columnspan=2, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=3, column=5, columnspan=2, padx=6, pady=(0, 6), sticky="w")
 
         filters = ttk.Frame(self)
         filters.pack(fill="x", padx=10, pady=(0, 6))
@@ -161,21 +168,36 @@ class SymbolPreviewWindow(tk.Toplevel):
             messagebox.showinfo("Symbol import", "Select at least one ready row.", parent=self); return
         batch_reads = self.read_mode_var.get() == "batched"
         mode = "bounded batch requests" if batch_reads else "one request per symbol"
+        writeable = sum(
+            item.mapping is not None and item.mapping.register_type in {"coil", "holding_register"}
+            for item in items
+        )
+        write_note = ""
+        if self.write_companions_var.get():
+            write_note = f"\nCreate {writeable} independent SCADA write companion(s) for writable symbols."
         if not messagebox.askyesno(
             "Symbol import",
             f"Import {len(items)} selected symbols into {self.device_var.get()} using {mode}?\n\n"
+            f"{write_note}\n"
             "This changes only the project; it does not deploy to RutOS.",
             parent=self,
         ):
             return
         try:
+            before_writes = sum(request.function.is_write for source in (*self.parent.project.devices, *self.parent.project.tcp_clients) for request in source.requests)
             count = apply_symbol_import_plan(
                 self.parent.project, items, device_name=self.device_var.get(), mapping_start=int(self.start_var.get()),
                 batch_reads=batch_reads,
+                create_write_companions=self.write_companions_var.get(),
             )
+            after_writes = sum(request.function.is_write for source in (*self.parent.project.devices, *self.parent.project.tcp_clients) for request in source.requests)
         except Exception as exc:
             messagebox.showerror("Symbol import", str(exc), parent=self); return
         self.parent.mark_dirty()
         self.parent.refresh_all()
-        messagebox.showinfo("Symbol import", f"Imported {count} symbols.", parent=self)
+        messagebox.showinfo(
+            "Symbol import",
+            f"Imported {count} symbols.\nCreated {after_writes - before_writes} write companions.",
+            parent=self,
+        )
         self.destroy()
