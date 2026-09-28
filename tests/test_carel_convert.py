@@ -4,7 +4,7 @@ from teltonika_modbus_configurator.carel_convert import (
     repack_carel_import_items,
 )
 from teltonika_modbus_configurator.carel_import import CarelImportRow
-from teltonika_modbus_configurator.models import FunctionCode, Project, TcpClientDevice
+from teltonika_modbus_configurator.models import Device, FunctionCode, Project, SerialConnection, TcpClientDevice
 from teltonika_modbus_configurator.atvise_symbols import export_atvise_symbols
 from teltonika_modbus_configurator.uci_generator import generate_uci
 
@@ -210,3 +210,35 @@ def test_batched_carel_reads_split_before_100_register_limit():
     apply_carel_import_plan(project, plan, tcp_device_name="Carel", batch_reads=True)
 
     assert [(request.register, request.count) for request in project.tcp_clients[0].requests] == [(0, 2), (99, 2)]
+
+
+def test_carel_import_supports_rtu_target_with_batching_writes_and_uci():
+    project = Project(
+        connections=[SerialConnection(name="RS485", device="/dev/rs485", baudrate=19200)],
+        devices=[Device(name="Carel_RTU", slave_id=7, connection="RS485")],
+    )
+    rows = [
+        CarelImportRow("Documentation", 2, "Temperature", "10", "HoldingRegister", "2", "Real", "Read"),
+        CarelImportRow("Documentation", 3, "Setpoint", "20", "HoldingRegister", "1", "UInt", "ReadWrite"),
+    ]
+    plan = build_carel_import_plan(
+        project, rows, device_name="Carel_RTU", add_one_to_index=False,
+    )
+
+    read_count, write_count = apply_carel_import_plan(
+        project,
+        plan,
+        device_name="Carel_RTU",
+        batch_reads=True,
+        create_write_companions=True,
+    )
+
+    assert (read_count, write_count) == (2, 1)
+    requests = {request.name: request for request in project.devices[0].requests}
+    assert requests["Batch_FC03_10_20"].count == 11
+    assert requests["Setpoint_w"].function == FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
+    assert all(mapping.device == "Carel_RTU" for mapping in project.mappings)
+    generated = generate_uci(project)
+    assert "option server_id '7'" in generated.modbus_client
+    assert "option tag_name 'Batch_FC03_10_20'" in generated.modbus_server
+    assert "option tag_name 'Setpoint_w'" in generated.modbus_server
