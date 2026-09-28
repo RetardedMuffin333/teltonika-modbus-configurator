@@ -255,10 +255,14 @@ class CarelPreviewWindow(tk.Toplevel):
 
         options = ttk.LabelFrame(self, text="Import options")
         options.pack(fill="x", padx=10, pady=(0, 5))
-        ttk.Label(options, text="Target Modbus TCP client:").grid(row=0, column=0, padx=6, pady=6, sticky="w")
+        ttk.Label(options, text="Target Modbus device:").grid(row=0, column=0, padx=6, pady=6, sticky="w")
         self.device_var = tk.StringVar()
-        devices = [d.name for d in parent.project.tcp_clients]
-        self.device_box = ttk.Combobox(options, textvariable=self.device_var, values=devices, state="readonly", width=26)
+        self.device_targets = {
+            **{f"[RTU] {device.name}": device.name for device in parent.project.devices},
+            **{f"[TCP] {device.name}": device.name for device in parent.project.tcp_clients},
+        }
+        devices = list(self.device_targets)
+        self.device_box = ttk.Combobox(options, textvariable=self.device_var, values=devices, state="readonly", width=32)
         self.device_box.grid(row=0, column=1, padx=6, pady=6, sticky="w")
         if devices:
             self.device_var.set(devices[0])
@@ -362,10 +366,11 @@ class CarelPreviewWindow(tk.Toplevel):
 
     def build_plan(self):
         if not self.device_var.get():
-            messagebox.showerror("Carel import", "Create or select a Modbus TCP client first.", parent=self); return
+            messagebox.showerror("Carel import", "Create or select a Modbus RTU device or TCP client first.", parent=self); return
+        device_name = self.device_targets[self.device_var.get()]
         try:
             self.plan = build_carel_import_plan(
-                self.parent.project, self.preview.rows, tcp_device_name=self.device_var.get(),
+                self.parent.project, self.preview.rows, device_name=device_name,
                 add_one_to_index=self.add_one_var.get(), mapping_start=int(self.start_var.get()),
             )
         except Exception as exc:
@@ -382,6 +387,7 @@ class CarelPreviewWindow(tk.Toplevel):
                 if item.request is not None and item.mapping is not None: selected_items.append(item)
         if not selected_items:
             messagebox.showwarning("Carel import", "Select at least one ready row to import.", parent=self); return
+        device_name = self.device_targets[self.device_var.get()]
         extra = "\nSCADA write companions will also be created for selected ReadWrite Coil/HoldingRegister rows." if self.write_companions_var.get() else ""
         batch_reads = self.read_mode_var.get() == "batched"
         if batch_reads:
@@ -395,7 +401,7 @@ class CarelPreviewWindow(tk.Toplevel):
             return
         try:
             read_count, write_count = apply_carel_import_plan(
-                self.parent.project, selected_items, tcp_device_name=self.device_var.get(),
+                self.parent.project, selected_items, device_name=device_name,
                 mapping_start=int(self.start_var.get()), create_write_companions=self.write_companions_var.get(),
                 batch_reads=batch_reads,
             )
