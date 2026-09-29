@@ -40,32 +40,42 @@ class SymbolPreviewWindow(tk.Toplevel):
         ttk.Entry(options, textvariable=self.start_var, width=8).grid(row=0, column=5, padx=4, pady=6)
         ttk.Button(options, text="Build import plan", command=self.build_plan).grid(row=0, column=6, padx=10, pady=6)
 
+        ttk.Label(options, text="Existing names:").grid(row=1, column=0, padx=6, pady=(0, 6), sticky="w")
+        self.conflict_var = tk.StringVar(value="Skip existing")
+        ttk.Combobox(
+            options,
+            textvariable=self.conflict_var,
+            values=("Skip existing", "Replace matching on selected device"),
+            state="readonly",
+            width=36,
+        ).grid(row=1, column=1, columnspan=3, padx=6, pady=(0, 6), sticky="w")
+
         ttk.Label(
             options,
             text="Symbol addresses are treated as physical device registers. Connection IP/slave/serial settings come from the selected existing device.",
-        ).grid(row=1, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=2, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
 
         self.write_companions_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             options,
             text="Create SCADA write companions for selected DA/HR/HRR/HRD symbols",
             variable=self.write_companions_var,
-        ).grid(row=2, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=3, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
 
         self.read_mode_var = tk.StringVar(value="batched")
-        ttk.Label(options, text="Read import mode:").grid(row=3, column=0, padx=6, pady=(0, 6), sticky="w")
+        ttk.Label(options, text="Read import mode:").grid(row=4, column=0, padx=6, pady=(0, 6), sticky="w")
         ttk.Radiobutton(
             options,
             text="Batched (recommended; FC03/FC04 up to 100 registers, FC01/FC02 up to 1000 bits)",
             variable=self.read_mode_var,
             value="batched",
-        ).grid(row=3, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=4, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
         ttk.Radiobutton(
             options,
             text="Register by register",
             variable=self.read_mode_var,
             value="individual",
-        ).grid(row=3, column=5, columnspan=2, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=4, column=5, columnspan=2, padx=6, pady=(0, 6), sticky="w")
 
         filters = ttk.Frame(self)
         filters.pack(fill="x", padx=10, pady=(0, 6))
@@ -156,6 +166,7 @@ class SymbolPreviewWindow(tk.Toplevel):
             self.plan = build_symbol_import_plan(
                 self.parent.project, self.preview.rows, device_name=self.device_var.get(),
                 source_address_offset=offset, mapping_start=start,
+                conflict_policy="replace" if self.conflict_var.get().startswith("Replace") else "skip",
             )
         except Exception as exc:
             messagebox.showerror("Symbol import", str(exc), parent=self); return

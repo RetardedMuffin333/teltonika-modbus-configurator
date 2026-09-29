@@ -11,6 +11,12 @@ from pathlib import Path
 import re
 
 from .models import FunctionCode, Project, Request, ServerMapping
+from .import_conflicts import (
+    REPLACE_MATCHING,
+    can_replace_name,
+    replace_import_names,
+    validate_conflict_policy,
+)
 from .read_batching import batch_read_items
 from .register_allocator import first_free_register_range, register_value_width
 from .scada_write import WRITE_MAPPING_START, create_scada_write_target_from_definition
@@ -38,6 +44,7 @@ class SymbolPlannedItem:
     request: Request | None
     mapping: ServerMapping | None
     status: str
+    replace_existing: bool = False
 
 
 # Verified against real atvise Connect symbols and live/working RutOS requests.
@@ -96,9 +103,11 @@ def build_symbol_import_plan(
     device_name: str,
     source_address_offset: int = 0,
     mapping_start: int = 1025,
+    conflict_policy: str = "skip",
 ) -> list[SymbolPlannedItem]:
     """Build a non-destructive plan using symbol addresses as physical device registers."""
     requests = _target_requests(project, device_name)
+    validate_conflict_policy(conflict_policy)
     existing_request_names = {r.name for r in requests}
     existing_mapping_names = {m.name for m in project.mappings}
     planned_requests: set[str] = set()
@@ -114,11 +123,19 @@ def build_symbol_import_plan(
         if not row.name:
             result.append(SymbolPlannedItem(row, None, None, "Skip: empty node name"))
             continue
-        if row.name in existing_request_names or row.name in planned_requests:
+        if row.name in planned_requests:
             result.append(SymbolPlannedItem(row, None, None, f"Skip: duplicate request name {row.name}"))
             continue
-        if row.name in existing_mapping_names or row.name in planned_mappings:
+        if row.name in planned_mappings:
             result.append(SymbolPlannedItem(row, None, None, f"Skip: duplicate mapping name {row.name}"))
+            continue
+        existing_conflict = row.name in existing_request_names or row.name in existing_mapping_names
+        replace_existing = existing_conflict and conflict_policy == REPLACE_MATCHING
+        if existing_conflict and not replace_existing:
+            result.append(SymbolPlannedItem(row, None, None, f"Skip: existing request or mapping {row.name}"))
+            continue
+        if replace_existing and not can_replace_name(project, device_name=device_name, name=row.name):
+            result.append(SymbolPlannedItem(row, None, None, f"Skip: mapping name {row.name} belongs to another device"))
             continue
 
         function, register_type, data_type, byte_order, request_count = spec
@@ -147,7 +164,8 @@ def build_symbol_import_plan(
         shadow.mappings.append(mapping)
         planned_requests.add(row.name)
         planned_mappings.add(row.name)
-        result.append(SymbolPlannedItem(row, request, mapping, "Ready"))
+        status = "Ready (replace existing)" if replace_existing else "Ready"
+        result.append(SymbolPlannedItem(row, request, mapping, status, replace_existing))
     return result
 
 
@@ -180,6 +198,11 @@ def apply_symbol_import_plan(
     """Apply selected ready rows to an existing RTU or TCP target device."""
     requests = _target_requests(project, device_name)
     ready = [item for item in items if item.request is not None and item.mapping is not None]
+    replace_import_names(
+        project,
+        device_name=device_name,
+        names={item.source.name for item in ready if item.replace_existing},
+    )
     packed = repack_symbol_import_items(project, ready, mapping_start=mapping_start)
     semantic_items = list(packed)
     if batch_reads:

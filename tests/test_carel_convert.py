@@ -1,3 +1,5 @@
+import pytest
+
 from teltonika_modbus_configurator.carel_convert import (
     apply_carel_import_plan,
     build_carel_import_plan,
@@ -7,6 +9,7 @@ from teltonika_modbus_configurator.carel_import import CarelImportRow
 from teltonika_modbus_configurator.models import Device, FunctionCode, Project, SerialConnection, TcpClientDevice
 from teltonika_modbus_configurator.atvise_symbols import export_atvise_symbols
 from teltonika_modbus_configurator.uci_generator import generate_uci
+from teltonika_modbus_configurator.validator import validate_project
 
 
 def _project():
@@ -242,3 +245,69 @@ def test_carel_import_supports_rtu_target_with_batching_writes_and_uci():
     assert "option server_id '7'" in generated.modbus_client
     assert "option tag_name 'Batch_FC03_10_20'" in generated.modbus_server
     assert "option tag_name 'Setpoint_w'" in generated.modbus_server
+
+
+@pytest.mark.parametrize("target_kind", ["rtu", "tcp"])
+@pytest.mark.parametrize("batch_reads", [False, True])
+def test_write_companions_work_for_rtu_tcp_and_single_batched_imports(target_kind, batch_reads):
+    if target_kind == "rtu":
+        project = Project(
+            connections=[SerialConnection(name="RS485")],
+            devices=[Device(name="Target", slave_id=3, connection="RS485")],
+        )
+        source = project.devices[0]
+    else:
+        project = Project(tcp_clients=[TcpClientDevice(name="Target", host="192.168.2.20")])
+        source = project.tcp_clients[0]
+    rows = [
+        CarelImportRow("Documentation", 2, "Enable", "1", "Coil", "1", "Bool", "ReadWrite"),
+        CarelImportRow("Documentation", 3, "Mode", "10", "HoldingRegister", "1", "UInt", "ReadWrite"),
+        CarelImportRow("Documentation", 4, "Setpoint", "20", "HoldingRegister", "2", "Real", "ReadWrite"),
+    ]
+    plan = build_carel_import_plan(project, rows, device_name="Target", add_one_to_index=False)
+    assert apply_carel_import_plan(
+        project,
+        plan,
+        device_name="Target",
+        batch_reads=batch_reads,
+        create_write_companions=True,
+    ) == (3, 3)
+
+    writes = {request.name: request for request in source.requests if request.function.is_write}
+    assert writes["Enable_w"].function == FunctionCode.WRITE_SINGLE_COIL
+    assert writes["Mode_w"].function == FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
+    assert writes["Setpoint_w"].function == FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
+    assert all(not request.enabled for request in writes.values())
+    assert {mapping.name for mapping in project.mappings if mapping.permissions == "w"} == set(writes)
+    assert not [message for message in validate_project(project) if message.level == "error"]
+
+
+def test_carel_replace_conflict_updates_value_and_write_companion_without_duplicates():
+    project = _project()
+    original = [CarelImportRow("Documentation", 2, "Setpoint", "10", "HoldingRegister", "1", "UInt", "ReadWrite")]
+    plan = build_carel_import_plan(project, original, device_name="Carel", add_one_to_index=False)
+    apply_carel_import_plan(project, plan, device_name="Carel", create_write_companions=True)
+
+    changed = [CarelImportRow("Documentation", 2, "Setpoint", "44", "HoldingRegister", "2", "Real", "ReadWrite")]
+    replacement = build_carel_import_plan(
+        project,
+        changed,
+        device_name="Carel",
+        add_one_to_index=False,
+        conflict_policy="replace",
+    )
+    assert replacement[0].status == "Ready (replace existing)"
+    apply_carel_import_plan(
+        project,
+        replacement,
+        device_name="Carel",
+        create_write_companions=True,
+    )
+
+    requests = project.tcp_clients[0].requests
+    assert sum(request.name == "Setpoint" for request in requests) == 1
+    assert sum(request.name == "Setpoint_w" for request in requests) == 1
+    assert next(request for request in requests if request.name == "Setpoint").register == 44
+    assert next(request for request in requests if request.name == "Setpoint_w").function == FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
+    assert sum(mapping.name == "Setpoint" for mapping in project.mappings) == 1
+    assert sum(mapping.name == "Setpoint_w" for mapping in project.mappings) == 1
