@@ -1,5 +1,6 @@
 from teltonika_modbus_configurator.models import Device, FunctionCode, Project, SerialConnection, TcpClientDevice
 from teltonika_modbus_configurator.symbol_import import (
+    SymbolRow,
     apply_symbol_import_plan,
     build_symbol_import_plan,
     load_symbol_file,
@@ -163,3 +164,33 @@ def test_batched_symbol_import_can_create_individual_write_companions():
     write_mappings = {mapping.name: mapping for mapping in project.mappings if mapping.permissions == "w"}
     assert set(write_mappings) == set(writes)
     assert all(mapping.register >= 20000 for mapping in write_mappings.values())
+
+
+def test_replace_symbol_inside_shared_batch_preserves_other_alias_and_replaces_write():
+    project = Project(tcp_clients=[TcpClientDevice(name="PLC", host="10.0.0.2")])
+    rows = [SymbolRow(1, "A", "HR", 10), SymbolRow(2, "B", "HR", 11)]
+    plan = build_symbol_import_plan(project, rows, device_name="PLC")
+    apply_symbol_import_plan(
+        project, plan, device_name="PLC", batch_reads=True, create_write_companions=True,
+    )
+
+    changed = [SymbolRow(1, "A", "HRR", 30)]
+    replacement = build_symbol_import_plan(
+        project, changed, device_name="PLC", conflict_policy="replace",
+    )
+    assert replacement[0].status == "Ready (replace existing)"
+    apply_symbol_import_plan(
+        project,
+        replacement,
+        device_name="PLC",
+        batch_reads=True,
+        create_write_companions=True,
+    )
+
+    requests = project.tcp_clients[0].requests
+    assert any(request.name == "Batch_FC03_10_11" for request in requests)
+    assert any(mapping.name == "B" and mapping.request == "Batch_FC03_10_11" for mapping in project.mappings)
+    assert sum(mapping.name == "A" for mapping in project.mappings) == 1
+    assert sum(mapping.name == "A_w" for mapping in project.mappings) == 1
+    assert sum(request.name == "A_w" for request in requests) == 1
+    assert next(request for request in requests if request.name == "A_w").function == FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
