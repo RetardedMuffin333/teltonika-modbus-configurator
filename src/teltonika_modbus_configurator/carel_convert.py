@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from .carel_import import CarelImportRow
+from .import_conflicts import (
+    REPLACE_MATCHING,
+    can_replace_name,
+    replace_import_names,
+    validate_conflict_policy,
+)
 from .models import FunctionCode, Project, Request, ServerMapping
 from .read_batching import batch_read_items
 from .register_allocator import first_free_register_range, register_value_width
@@ -20,6 +26,7 @@ class CarelPlannedItem:
     request: Request | None
     mapping: ServerMapping | None
     status: str
+    replace_existing: bool = False
 
 
 # Carel cDesign names plus common generic-table aliases. Keeping the conversion
@@ -74,9 +81,11 @@ def build_carel_import_plan(
     tcp_device_name: str | None = None,
     add_one_to_index: bool = True,
     mapping_start: int = 1025,
+    conflict_policy: str = "skip",
 ) -> list[CarelPlannedItem]:
     """Build a non-destructive import plan for an existing RTU or TCP client."""
     target_name = _device_name(device_name=device_name, tcp_device_name=tcp_device_name)
+    validate_conflict_policy(conflict_policy)
     device = _target_device(project, target_name)
     if device is None:
         raise ValueError(f"Modbus RTU device or TCP client {target_name!r} does not exist.")
@@ -98,10 +107,16 @@ def build_carel_import_plan(
             result.append(CarelPlannedItem(row, None, None, f"Skip: invalid register/index {row.register!r}")); continue
         if not row.name:
             result.append(CarelPlannedItem(row, None, None, "Skip: empty variable name")); continue
-        if row.name in existing_request_names or row.name in planned_request_names:
+        if row.name in planned_request_names:
             result.append(CarelPlannedItem(row, None, None, f"Skip: duplicate request name {row.name}")); continue
-        if row.name in existing_mapping_names or row.name in planned_mapping_names:
+        if row.name in planned_mapping_names:
             result.append(CarelPlannedItem(row, None, None, f"Skip: duplicate mapping name {row.name}")); continue
+        existing_conflict = row.name in existing_request_names or row.name in existing_mapping_names
+        replace_existing = existing_conflict and conflict_policy == REPLACE_MATCHING
+        if existing_conflict and not replace_existing:
+            result.append(CarelPlannedItem(row, None, None, f"Skip: existing request or mapping {row.name}")); continue
+        if replace_existing and not can_replace_name(project, device_name=target_name, name=row.name):
+            result.append(CarelPlannedItem(row, None, None, f"Skip: mapping name {row.name} belongs to another device")); continue
 
         function, register_type = area; data_type, byte_order = dtype
         request = Request(name=row.name, function=function, register=source_index + (1 if add_one_to_index else 0), count=1, data_type=data_type, byte_order=byte_order, enabled=True)
@@ -109,7 +124,8 @@ def build_carel_import_plan(
         server_register = first_free_register_range(shadow, register_type=register_type, width=width, default=mapping_start)
         mapping = ServerMapping(name=row.name, device=target_name, request=row.name, register=server_register, register_type=register_type, enabled=True, permissions="r", data_type=data_type, count=1)
         shadow.mappings.append(mapping); planned_request_names.add(row.name); planned_mapping_names.add(row.name)
-        result.append(CarelPlannedItem(row, request, mapping, "Ready"))
+        status = "Ready (replace existing)" if replace_existing else "Ready"
+        result.append(CarelPlannedItem(row, request, mapping, status, replace_existing))
     return result
 
 
@@ -164,6 +180,11 @@ def apply_carel_import_plan(
     if device is None:
         raise ValueError(f"Modbus RTU device or TCP client {target_name!r} does not exist.")
     ready = [item for item in items if item.request is not None and item.mapping is not None]
+    replace_import_names(
+        project,
+        device_name=target_name,
+        names={item.source.name for item in ready if item.replace_existing},
+    )
     packed = repack_carel_import_items(project, ready, mapping_start=mapping_start)
     semantic_items = list(packed)
     if batch_reads:
