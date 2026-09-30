@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import messagebox, ttk
 
 from .live_test import (
     READ_FUNCTIONS,
@@ -429,11 +429,13 @@ class LiveModbusTesterWindow(tk.Toplevel):
             f"Register: {request.register}\n"
             f"Value(s): {request.values}\n"
             f"Data type / order: {request.data_type} / {request.byte_order}\n\n"
-            "This command will be sent immediately. Type WRITE to continue:"
+            "This command will be sent to the field device immediately.\n"
+            "Confirm only if the target and value are safe."
         )
-        confirmation = simpledialog.askstring("Confirm live Modbus write", summary, parent=self)
-        if confirmation != "WRITE":
-            self.write_status_var.set("Write cancelled; confirmation text did not match WRITE.")
+        if not messagebox.askokcancel(
+            "Confirm live Modbus write", summary, icon="warning", parent=self,
+        ):
+            self.write_status_var.set("Write cancelled.")
             return
         self.write_status_var.set("Writing...")
         self.write_elapsed_var.set("-")
