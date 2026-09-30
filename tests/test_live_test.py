@@ -5,6 +5,7 @@ from teltonika_modbus_configurator.live_test import (
     project_test_targets,
     read_targets_for_device,
     run_timed_test,
+    target_for_request,
     write_targets,
 )
 from teltonika_modbus_configurator.models import Device, FunctionCode, Request, SerialConnection, TcpClientDevice
@@ -144,8 +145,27 @@ def test_make_adhoc_float_write_uses_fc16_and_value():
         data_type="float32", byte_order="1234",
     )
     assert target.request.function == FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
+    assert target.request.name == "Manual write"
     assert target.request.values == "21.5"
     assert target.request.enabled is False
+
+
+def test_target_for_proposed_request_works_before_request_is_imported():
+    connection = SerialConnection("RS485", baudrate=19200, parity="even")
+    device = Device(
+        name="RDF", slave_id=7, connection="RS485", source_id="42", requests=[],
+    )
+    proposed = Request("Batch_HR_19_29", FunctionCode.READ_HOLDING_REGISTERS, 19, count=11)
+
+    target = target_for_request(
+        [device], [], [connection], device_name="RDF", request=proposed,
+    )
+
+    assert target.request is proposed
+    assert target.device_id == 7
+    assert target.config_id == "42"
+    assert target.baudrate == 19200
+    assert target.parity == "even"
 
 
 def test_make_adhoc_coil_write_normalizes_boolean_values():
