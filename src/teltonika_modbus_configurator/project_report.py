@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 
 from .models import FunctionCode, Project, ServerMapping
+from .read_batching import is_batch_name
 from .register_allocator import mapping_width
 from .validator import validate_project
 
@@ -54,7 +55,7 @@ def render_project_report(project: Project, *, project_name: str = "<unsaved>") 
     enabled_deployed = [mapping for mapping in deployed if mapping.enabled]
     read_mappings = [mapping for mapping in enabled_deployed if mapping.permissions == "r"]
     write_mappings = [mapping for mapping in enabled_deployed if mapping.permissions == "w"]
-    batches = [request for request in requests if request.name.startswith("Batch_FC")]
+    batches = [request for request in requests if is_batch_name(request.name)]
 
     aliases_by_request: dict[tuple[str, str], int] = Counter(
         (mapping.device, mapping.request)
