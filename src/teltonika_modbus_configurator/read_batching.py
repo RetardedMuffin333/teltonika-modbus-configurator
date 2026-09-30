@@ -71,16 +71,23 @@ def batch_read_items(
         blocks: list[list] = []
         current: list = []
         block_start = 0
+        previous_end = -1
         for item in ordered:
             width = register_value_width(item.request.data_type, register_type)
             item_start = item.request.register
             item_end = item_start + width - 1
-            if current and item_end - block_start + 1 > limit:
+            # A Modbus read is always contiguous. Crossing an undocumented or
+            # unimplemented address can make the field device reject the whole
+            # request with Illegal Data Address, so the safe default is to end
+            # the batch at every source-address gap.
+            has_gap = bool(current) and item_start > previous_end + 1
+            if current and (has_gap or item_end - block_start + 1 > limit):
                 blocks.append(current)
                 current = []
             if not current:
                 block_start = item_start
             current.append(item)
+            previous_end = max(previous_end, item_end) if len(current) > 1 else item_end
         if current:
             blocks.append(current)
 

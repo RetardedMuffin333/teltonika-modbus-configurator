@@ -156,26 +156,27 @@ def test_batched_carel_reads_share_requests_and_use_tag_offsets():
     )
 
     assert (read_count, write_count) == (3, 0)
-    assert len(project.tcp_clients[0].requests) == 1
-    request = project.tcp_clients[0].requests[0]
-    assert (request.register, request.count, request.data_type) == (10, 11, "uint16")
+    assert [(request.register, request.count, request.data_type) for request in project.tcp_clients[0].requests] == [
+        (10, 4, "uint16"),
+        (20, 1, "uint16"),
+    ]
     mappings = {mapping.name: mapping for mapping in project.mappings}
     assert mappings["Temperature_A"].source_offset == 0
     assert mappings["Temperature_B"].source_offset == 2
-    assert mappings["Setpoint"].source_offset == 10
+    assert mappings["Setpoint"].source_offset == 0
     assert (mappings["Temperature_A"].data_type, mappings["Temperature_A"].count) == ("uint16", 2)
     assert mappings["Temperature_A"].symbol_data_type == "float32"
     assert mappings["Temperature_A"].deploy is False
-    block = mappings["Batch_HR_10_20"]
-    assert (block.register, block.count, block.deploy, block.export_symbol) == (1025, 11, True, False)
+    assert (mappings["Batch_HR_10_13"].register, mappings["Batch_HR_10_13"].count) == (1025, 4)
+    assert (mappings["Batch_HR_20_20"].register, mappings["Batch_HR_20_20"].count) == (1029, 1)
 
     generated = generate_uci(project)
     assert "option data_type '16bit_uint_hi_first'" in generated.modbus_client
-    assert "option reg_count '11'" in generated.modbus_client
-    assert generated.modbus_server.count("config tag ") == 1
+    assert "option reg_count '4'" in generated.modbus_client
+    assert generated.modbus_server.count("config tag ") == 2
     assert "option tag_start '0'" in generated.modbus_server
     assert "option tag_type 'uint16'" in generated.modbus_server
-    assert "option tag_count '11'" in generated.modbus_server
+    assert "option tag_count '4'" in generated.modbus_server
     symbols = export_atvise_symbols(project)
     assert "sym-Temperature_A=HRR1025," in symbols
     assert "sym-Temperature_B=HRR1027," in symbols
@@ -238,12 +239,14 @@ def test_carel_import_supports_rtu_target_with_batching_writes_and_uci():
 
     assert (read_count, write_count) == (2, 1)
     requests = {request.name: request for request in project.devices[0].requests}
-    assert requests["Batch_HR_10_20"].count == 11
+    assert requests["Batch_HR_10_11"].count == 2
+    assert requests["Batch_HR_20_20"].count == 1
     assert requests["Setpoint_w"].function == FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
     assert all(mapping.device == "Carel_RTU" for mapping in project.mappings)
     generated = generate_uci(project)
     assert "option server_id '7'" in generated.modbus_client
-    assert "option tag_name 'Batch_HR_10_20'" in generated.modbus_server
+    assert "option tag_name 'Batch_HR_10_11'" in generated.modbus_server
+    assert "option tag_name 'Batch_HR_20_20'" in generated.modbus_server
     assert "option tag_name 'Setpoint_w'" in generated.modbus_server
 
 
@@ -351,11 +354,12 @@ def test_batched_write_import_creates_fc15_fc16_blocks_and_symbol_aliases():
 
     requests = {request.name: request for request in project.tcp_clients[0].requests}
     assert requests["Batch_DA_WRITE_1_1"].function == FunctionCode.WRITE_MULTIPLE_COILS
-    assert requests["Batch_HR_WRITE_10_13"].function == FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
-    assert requests["Batch_HR_WRITE_10_13"].values == "0 0 0 0"
+    assert requests["Batch_HR_WRITE_10_10"].function == FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
+    assert requests["Batch_HR_WRITE_10_10"].values == "0"
+    assert requests["Batch_HR_WRITE_12_13"].values == "0 0"
     aliases = {mapping.name: mapping for mapping in project.mappings if not mapping.deploy}
     assert set(aliases) == {"Enable_w", "Mode_w", "Setpoint_w"}
-    assert aliases["Setpoint_w"].source_offset == 2
+    assert aliases["Setpoint_w"].source_offset == 0
     assert aliases["Setpoint_w"].count == 2
     assert aliases["Setpoint_w"].symbol_data_type == "float32"
     assert not [message for message in validate_project(project) if message.level == "error"]

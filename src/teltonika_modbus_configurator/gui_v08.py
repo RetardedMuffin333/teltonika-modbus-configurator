@@ -68,10 +68,11 @@ class V08ProjectEditor(V06ProjectEditor):
                     if not mapping.deploy and mapping.device == device_name and mapping.request == request.name
                 ]
                 for alias_index, alias in enumerate(aliases):
+                    source_register = request.register + alias.source_offset
                     tree.insert(
                         str(index), "end", iid=f"request-alias::{device_name}::{index}::{alias_index}",
-                        values=(f"↳ {alias.name}", alias.permissions,
-                                f"TCP {alias.register}", "symbol", alias.symbol_data_type or alias.data_type,
+                        values=(f"↳ {alias.name}", "alias",
+                                source_register, alias.count, alias.symbol_data_type or alias.data_type,
                                 "", enabled_mark(alias.enabled)), tags=("symbol_alias",),
                     )
 

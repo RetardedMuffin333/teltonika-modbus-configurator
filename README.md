@@ -150,6 +150,7 @@ The recommended import mode groups compatible reads into bounded blocks:
 - FC01/FC02: up to **1000 bits** per request.
 - A 32-bit value always remains entirely inside one block.
 - Each function/address space is batched separately.
+- Automatic batching stops at every gap in the imported source addresses. It never fills a hole with undocumented registers or bits.
 
 Source registers `225–242`, for example, become one request named `Batch_HR_225_242`.
 Batch names use the Modbus area (`DA`, `DI`, `HR`, `IR`) instead of function-code numbers.
@@ -164,6 +165,8 @@ One deployed batch mapping: Holding Registers 1025 ... 1042
 ```
 
 This is why the mapping view shows batches while the exported atvise file still contains individually named symbols.
+
+Expand a physical batch in **Devices & Requests** to inspect every logical symbol inside it, including its original source register and datatype. The TCP Server Mappings page shows the corresponding server-side address and symbol name.
 
 Writable Coil and Holding Register values can also be grouped into FC15/FC16 blocks. Individual command names remain symbol aliases and are exported under the device's write group. Batch writes should always be confirmed on the target hardware with readback.
 
@@ -272,7 +275,7 @@ Settings still depend on network latency, gateway model/firmware, and project si
 
 Open **Bulk → Bulk Device Generator...** when many devices share one structure, such as room thermostats with sequential slave IDs.
 
-It can clone RTU/TCP templates, use sequential or explicit IDs, preserve relative offsets, allocate datatype-aware widths and separate read/write blocks, and detect collisions. Preview the batch and validate afterward.
+It can clone RTU/TCP templates, use sequential or explicit IDs, preserve physical batches and their symbol aliases, preserve relative offsets, allocate datatype-aware widths and separate read/write blocks, and detect collisions. Symbol aliases remain export-only; they are not deployed as duplicate TCP Server mappings. Preview the generated devices and validate afterward.
 
 ## Live Modbus Tester
 
@@ -280,10 +283,15 @@ Open **Tools → Live Modbus Tester...**. It uses the gateway's RutOS Web API `t
 
 | Mode | Use |
 | --- | --- |
-| **Existing Request** | Runs one configured request and shows timing, decoded value, and raw response. |
-| **Ad-hoc Test** | Reuses a device as transport while allowing FC/register/count/datatype overrides. |
-| **Write Test** | Runs an existing or ad-hoc FC05/FC06/FC15/FC16 command after an explicit safety confirmation. |
-| **Device Scan** | Sequentially tests every enabled FC01–FC04 request; one failure does not stop the scan. |
+| **Configured Read** | Runs one configured FC01–FC04 request and shows timing, decoded value, and raw response. |
+| **Manual Read** | Reuses a configured device as transport while allowing FC/register/count/datatype overrides. |
+| **Write Request** | Runs an existing or manually entered FC05/FC06/FC15/FC16 command after an explicit safety confirmation. |
+| **Scan Device** | Sequentially tests every enabled FC01–FC04 request; one failure does not stop the scan. |
+
+RutOS-style request terminology is used throughout the editor:
+
+- **Read count (registers/bits)** is the number of consecutive source addresses read by FC01–FC04.
+- **Write values (space-separated)** is the payload sent by FC05/FC06/FC15/FC16. Single writes contain one value; multiple writes may contain several values.
 
 Write tests send real commands to field equipment. Confirm the target register and safe value, then verify the result through the normal feedback/readback request.
 
@@ -338,7 +346,7 @@ Use **Deployment → Rollback snapshot...** to restore a configurator snapshot. 
 - Confirm IP, port, slave address, and start-address convention.
 - Confirm the symbol exists and its mapping is enabled.
 - Allow Connect to rebuild its request cycle after a large change.
-- Test the same request in **Live Modbus Tester → Existing Request**.
+- Test the same request in **Live Modbus Tester → Configured Read**.
 - If the tester is immediate but Connect is slow, investigate Connect polling/optimization.
 
 ### Values update only every 30–60 seconds
@@ -347,7 +355,16 @@ Use **Deployment → Rollback snapshot...** to restore a configurator snapshot. 
 - Keep Maximum read gap at `0` as the first baseline.
 - Test **Disable optimizer completely** in Connect.
 - Monitor one symbol temporarily; if it becomes fast, total cycle size causes the delay.
-- Use Device Scan timings to estimate gateway response time.
+- Use **Scan Device** timings to estimate gateway response time.
+
+### Illegal Data Address on a batch
+
+Modbus reads are contiguous. A request such as FC03 HR1–HR50 asks the field device for every address in that interval, even if the project only names HR1–HR19 and HR31–HR50. Many devices reject the complete request with `Illegal Data Address` when any address in the interval is unsupported.
+
+- Automatic read and write batching therefore splits at every known source-address gap and always separates HR, IR, DI, and DA areas.
+- If a documented range still contains a device-specific unsupported address, split it into smaller requests manually and locate the boundary with **Manual Read**.
+- RutOS **custom register block** controls the gateway's server-side register layout. It cannot make a downstream RDF/RTU/TCP device accept an invalid FC03/FC04 address.
+- A gap that is valid and readable may safely be combined manually, but conservative splitting is the reliable default.
 
 ### Device failure on only some symbols
 

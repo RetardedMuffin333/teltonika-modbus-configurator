@@ -41,6 +41,10 @@ class BulkMappingSpec:
     permissions: str = "r"
     data_type: str = "int16"
     count: int | None = None
+    source_offset: int = 0
+    symbol_data_type: str | None = None
+    deploy: bool = True
+    export_symbol: bool = True
 
 
 @dataclass(slots=True)
@@ -112,7 +116,8 @@ def allocate_template_mapping_layout(project: Project, mappings: list[ServerMapp
     """
     result: dict[str, tuple[int, int]] = {}
     by_type: dict[str, list[ServerMapping]] = {}
-    for mapping in mappings:
+    deployed = [mapping for mapping in mappings if mapping.deploy]
+    for mapping in deployed:
         by_type.setdefault(mapping.register_type, []).append(mapping)
 
     for register_type, group in by_type.items():
@@ -122,6 +127,19 @@ def allocate_template_mapping_layout(project: Project, mappings: list[ServerMapp
         base = next_free_register(project, register_type=register_type, default=default)
         for mapping in group:
             result[mapping.name] = (base + (mapping.register - source_min), block_width)
+
+    # Symbol-only aliases move with their physical batch and retain their
+    # offset. They must not reserve another live TCP Server address range.
+    for mapping in mappings:
+        if mapping.deploy:
+            continue
+        block = next(
+            (candidate for candidate in deployed if candidate.request == mapping.request),
+            None,
+        )
+        if block is not None and block.name in result:
+            block_start, step = result[block.name]
+            result[mapping.name] = (block_start + mapping.source_offset, step)
     return result
 
 
@@ -191,7 +209,10 @@ def validate_bulk_spec(project: Project, spec: BulkSpec) -> list[str]:
     existing_tcp_pairs = {(d.host, d.port, d.server_id) for d in project.tcp_clients}
     existing_mapping_names = {m.name for m in project.mappings}
     generated_names: set[str] = set(); generated_mapping_names: set[str] = set(); generated_ranges = []
-    existing_ranges = [(m.register_type, m.register, _mapping_width(m), m.name) for m in project.mappings if m.enabled]
+    existing_ranges = [
+        (m.register_type, m.register, _mapping_width(m), m.name)
+        for m in project.mappings if m.enabled and m.deploy
+    ]
 
     for ordinal in range(spec.count):
         index = spec.start_index + ordinal
@@ -213,7 +234,7 @@ def validate_bulk_spec(project: Project, spec: BulkSpec) -> list[str]:
             if name in generated_mapping_names: errors.append(f"TCP mapping pattern generates duplicate name {name!r}.")
             generated_mapping_names.add(name)
             if register + width - 1 > 65536: errors.append(f"TCP mapping {name!r} exceeds register 65536.")
-            if m.enabled:
+            if m.enabled and m.deploy:
                 for typ, start, ew, ename in existing_ranges:
                     if typ == m.register_type and _overlap(register, width, start, ew): errors.append(f"TCP {m.register_type} range {register}..{register + width - 1} for {name!r} overlaps existing mapping {ename!r}.")
                 for typ, start, gw, gname in generated_ranges:
@@ -248,7 +269,9 @@ def generate_bulk(project: Project, spec: BulkSpec) -> BulkResult:
             result.mappings.append(ServerMapping(name=_format(m.name_pattern, device=device_name, index=index, ordinal=ordinal, request=m.request),
                                                  device=device_name, request=m.request, register=m.start_register + ordinal * m.step,
                                                  register_type=m.register_type, enabled=m.enabled,
-                                                 permissions=permissions_for_function(r.function), data_type=m.data_type, count=count))
+                                                 permissions=permissions_for_function(r.function), data_type=m.data_type, count=count,
+                                                 source_offset=m.source_offset, symbol_data_type=m.symbol_data_type,
+                                                 deploy=m.deploy, export_symbol=m.export_symbol))
     return result
 
 

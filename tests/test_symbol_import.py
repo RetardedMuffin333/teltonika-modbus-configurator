@@ -116,24 +116,26 @@ def test_symbol_import_can_use_same_physical_batch_model_as_register_tables():
     ) == 3
 
     assert [(r.name, r.register, r.count, r.data_type) for r in project.tcp_clients[0].requests] == [
-        ("Batch_HR_10_21", 10, 12, "uint16")
+        ("Batch_HR_10_12", 10, 3, "uint16"),
+        ("Batch_HR_20_21", 20, 2, "uint16"),
     ]
     deployed = [m for m in project.mappings if m.deploy]
     aliases = {m.name: m for m in project.mappings if not m.deploy}
     assert [(m.name, m.register, m.count, m.export_symbol) for m in deployed] == [
-        ("Batch_HR_10_21", 1025, 12, False)
+        ("Batch_HR_10_12", 1025, 3, False),
+        ("Batch_HR_20_21", 1028, 2, False),
     ]
     assert (aliases["Temperature"].register, aliases["Temperature"].source_offset) == (1025, 0)
     assert (aliases["Mode"].register, aliases["Mode"].source_offset) == (1027, 2)
-    assert (aliases["Scheduler_Day"].register, aliases["Scheduler_Day"].source_offset) == (1035, 10)
+    assert (aliases["Scheduler_Day"].register, aliases["Scheduler_Day"].source_offset) == (1028, 0)
 
     generated = generate_uci(project)
-    assert generated.modbus_client.count("config request_") == 1
-    assert generated.modbus_server.count("config tag ") == 1
+    assert generated.modbus_client.count("config request_") == 2
+    assert generated.modbus_server.count("config tag ") == 2
     symbols = export_atvise_symbols(project)
     assert "sym-Temperature=HRR1025," in symbols
     assert "sym-Mode=HR1027," in symbols
-    assert "sym-Scheduler_Day=HRD1035," in symbols
+    assert "sym-Scheduler_Day=HRD1028," in symbols
 
 
 def test_batched_symbol_import_can_create_individual_write_companions():
