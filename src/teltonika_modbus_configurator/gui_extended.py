@@ -52,7 +52,9 @@ class ExtendedProjectEditor(DeploymentEditor):
     def _build_devices_tab(self):
         tab = ttk.Frame(self.tabs, padding=8); self.tabs.add(tab, text="Devices & Requests")
         pane = ttk.Panedwindow(tab, orient="vertical"); pane.pack(fill="both", expand=True)
-        upper = ttk.Frame(pane); lower = ttk.Frame(pane); pane.add(upper, weight=3); pane.add(lower, weight=2)
+        upper = ttk.LabelFrame(pane, text="RTU source devices", padding=6)
+        lower = ttk.LabelFrame(pane, text="Requests for selected RTU device", padding=6)
+        pane.add(upper, weight=3); pane.add(lower, weight=2)
         self.devices_tree = self._tree(upper, [
             ("name", "Device", 180), ("slave", "Slave ID", 80), ("conn", "Connection", 150),
             ("period", "Period", 80), ("timeout", "Timeout", 80), ("enabled", "Enabled", 80),
@@ -62,16 +64,15 @@ class ExtendedProjectEditor(DeploymentEditor):
         ttk.Button(db, text="Add device", command=self.add_device).pack(side="left", padx=3)
         ttk.Button(db, text="Edit device", command=self.edit_device).pack(side="left", padx=3)
         ttk.Button(db, text="Delete device", command=self.delete_device).pack(side="left", padx=3)
-        ttk.Label(lower, text="Requests for selected RTU device").pack(anchor="w")
         self.requests_tree = self._tree(lower, [
             ("name", "Request", 170), ("fc", "FC", 50), ("reg", "Register", 80),
             ("count", "Count / Values", 110), ("dtype", "Data type", 110), ("order", "Byte order", 140), ("enabled", "Enabled", 70),
         ])
         self.requests_tree.pack(fill="both", expand=True)
-        rb = ttk.Frame(lower); rb.pack(fill="x", pady=(6, 0))
-        ttk.Button(rb, text="Add request", command=self.add_request).pack(side="left", padx=3)
-        ttk.Button(rb, text="Edit request", command=self.edit_request).pack(side="left", padx=3)
-        ttk.Button(rb, text="Delete request", command=self.delete_request).pack(side="left", padx=3)
+        self.rtu_request_actions = ttk.Frame(lower); self.rtu_request_actions.pack(fill="x", pady=(6, 0))
+        ttk.Button(self.rtu_request_actions, text="Add", command=self.add_request).pack(side="left", padx=3)
+        ttk.Button(self.rtu_request_actions, text="Edit", command=self.edit_request).pack(side="left", padx=3)
+        ttk.Button(self.rtu_request_actions, text="Delete", command=self.delete_request).pack(side="left", padx=3)
 
     def _build_mappings_tab(self):
         tab = ttk.Frame(self.tabs, padding=8); self.tabs.add(tab, text="TCP Mappings")
@@ -93,7 +94,9 @@ class ExtendedProjectEditor(DeploymentEditor):
     def _build_tcp_clients_tab(self):
         tab = ttk.Frame(self.tabs, padding=8); self.tabs.add(tab, text="Modbus TCP Clients")
         pane = ttk.Panedwindow(tab, orient="vertical"); pane.pack(fill="both", expand=True)
-        upper = ttk.Frame(pane); lower = ttk.Frame(pane); pane.add(upper, weight=3); pane.add(lower, weight=2)
+        upper = ttk.LabelFrame(pane, text="Modbus TCP source devices", padding=6)
+        lower = ttk.LabelFrame(pane, text="Requests for selected TCP device", padding=6)
+        pane.add(upper, weight=3); pane.add(lower, weight=2)
 
         self.tcp_clients_tree = self._tree(upper, [
             ("name", "Name", 180), ("host", "Host / IP", 180), ("port", "Port", 70),
@@ -106,16 +109,15 @@ class ExtendedProjectEditor(DeploymentEditor):
         ttk.Button(buttons, text="Edit TCP client", command=self.edit_tcp_client).pack(side="left", padx=3)
         ttk.Button(buttons, text="Delete TCP client", command=self.delete_tcp_client).pack(side="left", padx=3)
 
-        ttk.Label(lower, text="Requests for selected TCP client").pack(anchor="w")
         self.tcp_client_requests_tree = self._tree(lower, [
             ("name", "Request", 170), ("fc", "FC", 50), ("reg", "Register", 80),
             ("count", "Count / Values", 110), ("dtype", "Data type", 110), ("order", "Byte order", 140), ("enabled", "Enabled", 70),
         ])
         self.tcp_client_requests_tree.pack(fill="both", expand=True)
-        rb = ttk.Frame(lower); rb.pack(fill="x", pady=(6, 0))
-        ttk.Button(rb, text="Add request", command=self.add_tcp_client_request).pack(side="left", padx=3)
-        ttk.Button(rb, text="Edit request", command=self.edit_tcp_client_request).pack(side="left", padx=3)
-        ttk.Button(rb, text="Delete request", command=self.delete_tcp_client_request).pack(side="left", padx=3)
+        self.tcp_request_actions = ttk.Frame(lower); self.tcp_request_actions.pack(fill="x", pady=(6, 0))
+        ttk.Button(self.tcp_request_actions, text="Add", command=self.add_tcp_client_request).pack(side="left", padx=3)
+        ttk.Button(self.tcp_request_actions, text="Edit", command=self.edit_tcp_client_request).pack(side="left", padx=3)
+        ttk.Button(self.tcp_request_actions, text="Delete", command=self.delete_tcp_client_request).pack(side="left", padx=3)
 
     def refresh_all(self):
         super().refresh_all()

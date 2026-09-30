@@ -10,11 +10,11 @@ from .gui_extended import ExtendedProjectEditor
 
 
 TAB_TITLES = (
-    "Modbus Serial Clients",
-    "Devices & Requests",
-    "Modbus TCP Clients",
+    "Serial Connections",
+    "RTU Devices",
+    "TCP Devices",
     "TCP Server",
-    "TCP Server Mappings",
+    "Server Mappings",
 )
 
 
@@ -22,17 +22,29 @@ class FlowProjectEditor(ExtendedProjectEditor):
     """Extended editor with tabs ordered to match the Modbus data flow."""
 
     def _build_ui(self):
-        top = ttk.Frame(self, padding=8)
+        style = ttk.Style(self)
+        style.configure("ProjectTitle.TLabel", font=("Segoe UI", 11, "bold"))
+        style.configure("ProjectSummary.TLabel", foreground="#5c6570")
+        style.configure("Treeview", rowheight=24)
+
+        top = ttk.Frame(self, padding=(12, 10))
         top.pack(fill="x")
-        ttk.Label(top, text="Project:").pack(side="left")
-        self.project_label = ttk.Label(top, text="<new>")
-        self.project_label.pack(side="left", padx=(6, 20))
-        ttk.Button(top, text="Validate", command=self.validate_project).pack(side="right", padx=3)
-        ttk.Button(top, text="Preview UCI", command=self.preview_uci).pack(side="right", padx=3)
-        ttk.Button(top, text="Save", command=self.save).pack(side="right", padx=3)
+        project_block = ttk.Frame(top)
+        project_block.pack(side="left", fill="x", expand=True)
+        self.project_label = ttk.Label(project_block, text="<new>", style="ProjectTitle.TLabel")
+        self.project_label.pack(anchor="w")
+        self.project_summary = tk.StringVar(value="New empty project")
+        ttk.Label(project_block, textvariable=self.project_summary, style="ProjectSummary.TLabel").pack(anchor="w", pady=(2, 0))
+
+        actions = ttk.Frame(top)
+        actions.pack(side="right")
+        ttk.Button(actions, text="Save Project", command=self.save).pack(side="left", padx=3)
+        ttk.Separator(actions, orient="vertical").pack(side="left", fill="y", padx=7)
+        ttk.Button(actions, text="Validate", command=self.validate_project).pack(side="left", padx=3)
+        ttk.Button(actions, text="Preview UCI", command=self.preview_uci).pack(side="left", padx=3)
 
         self.tabs = ttk.Notebook(self)
-        self.tabs.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.tabs.pack(fill="both", expand=True, padx=12, pady=(0, 10))
 
         # Build in the same order the configuration/data flows through RutOS.
         self._build_connections_tab()

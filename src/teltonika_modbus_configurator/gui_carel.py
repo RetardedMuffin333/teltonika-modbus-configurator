@@ -84,6 +84,7 @@ class CarelProjectEditor(ScadaProjectEditor):
                 "", "end", iid=group_iid, text=f"{device_name}   [{symbol_group}]",
                 open=(group_iid in open_items or not open_items),
                 values=("", "", "", "", "", "", "", ""),
+                tags=("device_group",),
             )
             for index, mapping in mappings:
                 mapping_iid = f"mapping::{index}"
@@ -100,6 +101,7 @@ class CarelProjectEditor(ScadaProjectEditor):
                     open=(mapping_iid in open_items),
                     values=(mapping.request, mapping.register_type, mapping.register, mapping.permissions,
                             mapping.data_type, mapping.count, enabled_mark(mapping.enabled), symbol_text),
+                    tags=("write_mapping",) if mapping.permissions == "w" else ("read_mapping",),
                 )
                 for alias_index, alias in mapping_aliases:
                     try:
@@ -122,6 +124,9 @@ class CarelProjectEditor(ScadaProjectEditor):
                     )
         self.mappings_tree.tag_configure("symbol_alias", foreground="#245b8a")
         self.mappings_tree.tag_configure("missing_aliases", foreground="#a33a2b")
+        self.mappings_tree.tag_configure("device_group", foreground="#25364a")
+        self.mappings_tree.tag_configure("read_mapping", foreground="#245b8a")
+        self.mappings_tree.tag_configure("write_mapping", foreground="#7a3f88")
 
     def _mapping_source_device(self, device_name: str):
         return next(

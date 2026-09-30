@@ -26,7 +26,7 @@ TCP devices --- Ethernet -/       |
 - Coil, Discrete Input, Holding Register, and Input Register server areas.
 - 8/16-bit types and hardware-verified 32-bit INT, UINT, and FLOAT variants.
 - Width-aware address allocation and collision detection.
-- Automatic batching for large read lists.
+- Automatic batching for compatible read and write lists.
 - Separate feedback and SCADA command paths.
 - Carel cDesign XLS/XLSX/CSV register-table import.
 - atvise Connect `.Symbol` import and export.
@@ -34,7 +34,8 @@ TCP devices --- Ethernet -/       |
 - YAML project save/load.
 - Live RutOS configuration import over SSH.
 - UCI preview, validation, live diff, guarded deployment, backups, and rollback.
-- Read-only live diagnostics through the RutOS Web API.
+- Live read diagnostics, device scans, and guarded write tests through the RutOS Web API.
+- Guided first-project wizard, structured validation results, import previews, and conflict handling.
 - A shareable project report with batching, workload, address-block, validation, and safety summaries.
 
 ## Installation
@@ -77,7 +78,7 @@ For a gateway that already contains a configuration:
 8. Re-import the live configuration or use the Live Modbus Tester to verify it.
 9. Export the atvise `.Symbol` file and import it into atvise Connect.
 
-For a new project, create the connections and devices manually or use an import/bulk workflow, then continue from validation. Passwords are requested when needed and are not stored in YAML.
+For a new project, select **File → First Project Wizard...**. The wizard creates the initial RTU/TCP structure and can continue directly to a Carel table or atvise Symbol import. Connections and devices can also be created manually or with the Bulk Device Generator. Passwords are requested when needed and are not stored in YAML.
 
 ## Main window
 
@@ -85,17 +86,25 @@ The tabs follow the data path through the gateway:
 
 | Tab | Purpose |
 | --- | --- |
-| **Modbus Serial Clients** | RS485 interfaces: baud rate, parity, data bits, and stop bits. |
-| **Devices & Requests** | Modbus RTU slave devices and their read/write requests. |
-| **Modbus TCP Clients** | Ethernet Modbus endpoints, unit IDs, timing, and requests. |
+| **Serial Connections** | RS485/RS232 interfaces: baud rate, parity, data bits, and stop bits. |
+| **RTU Devices** | Modbus RTU slave devices and grouped read/write requests. |
+| **TCP Devices** | Ethernet Modbus endpoints, unit IDs, timing, and grouped requests. |
 | **TCP Server** | Upstream server port and Device ID used by SCADA. |
-| **TCP Server Mappings** | Maps source requests into the four upstream address spaces. |
+| **Server Mappings** | Physical RutOS blocks and their individual atvise symbol aliases. |
 
 - **Save** stores the complete editable project as YAML.
 - **Preview UCI** shows the RutOS configuration that would be generated.
 - **Validate** checks references, functions, addresses, widths, collisions, and write requirements.
 
-Use Ctrl/Shift for multi-selection and double-click a row to edit it.
+The header also shows live project totals for RTU/TCP devices, requests, physical mappings, and symbol aliases.
+
+UI conventions:
+
+- `☑` means enabled and `☐` means disabled.
+- Read requests/mappings are blue; write requests/mappings are purple.
+- Expand **Read requests** or **Write requests** to inspect one direction only.
+- Expand a physical batch to inspect the individual symbol names preserved inside it.
+- Use Ctrl/Shift for multi-selection and double-click a normal request or mapping row to edit it.
 
 ## Core concepts
 
@@ -129,7 +138,7 @@ Select readable requests and use **Create write request(s)**. Generated command 
 
 FC06 can write one 16-bit register only. The validator rejects FC06 with `int32`, `uint32`, or `float32`; those values require FC16 even though they represent one logical SCADA value.
 
-## Read batching
+## Read and write batching
 
 ### Why batching is recommended
 
@@ -155,6 +164,8 @@ One deployed batch mapping: Holding Registers 1025 ... 1042
 ```
 
 This is why the mapping view shows batches while the exported atvise file still contains individually named symbols.
+
+Writable Coil and Holding Register values can also be grouped into FC15/FC16 blocks. Individual command names remain symbol aliases and are exported under the device's write group. Batch writes should always be confirmed on the target hardware with readback.
 
 ### Batched versus register-by-register
 
@@ -188,6 +199,13 @@ Types | Index | Size | Variable Name | DataType | Direction
 Common supported types include `Bool`, `USInt`, `SInt`, `UInt`, `Int`, `UDInt`, `DInt`, and `Real/FLOAT32`. Unknown types are skipped rather than guessed.
 
 The `Index + 1` rule is a Carel profile default, not a global Modbus rule. Confirm it for other Carel exports or firmware.
+
+The import preview never changes the project until **Import selected ready rows** is confirmed. Existing names can be handled with:
+
+- **Skip existing** — safe default for repeated imports;
+- **Replace matching on selected device** — replaces only matching data belonging to the chosen source device.
+
+Preview colors are green for ready rows, orange for replacements, red for conflicts, and gray for skipped rows. The footer summarizes ready, replacement, conflict, and skipped counts. For a write-only follow-up import, enable **Write requests only** so existing read paths are not duplicated.
 
 ## atvise Connect Symbol import
 
@@ -229,6 +247,16 @@ Export
 
 The export contains individual logical symbols, including aliases inside batches.
 
+Symbols are grouped by the editable atvise group of their source device. Read symbols use the base group and write symbols use the `_w` suffix:
+
+```ini
+[TP]
+sym-Outside_Temperature=HRR1025,
+
+[TP_w]
+sym-Setpoint_TC=HRR20000,
+```
+
 Recommended starting settings for the hardware-tested large batched project:
 
 - Protocol: Modbus TCP.
@@ -254,9 +282,10 @@ Open **Tools → Live Modbus Tester...**. It uses the gateway's RutOS Web API `t
 | --- | --- |
 | **Existing Request** | Runs one configured request and shows timing, decoded value, and raw response. |
 | **Ad-hoc Test** | Reuses a device as transport while allowing FC/register/count/datatype overrides. |
+| **Write Test** | Runs an existing or ad-hoc FC05/FC06/FC15/FC16 command after an explicit safety confirmation. |
 | **Device Scan** | Sequentially tests every enabled FC01–FC04 request; one failure does not stop the scan. |
 
-The tester is read-only. Test writes through the normal SCADA write mapping and feedback readback.
+Write tests send real commands to field equipment. Confirm the target register and safe value, then verify the result through the normal feedback/readback request.
 
 ## Project Report
 
@@ -267,6 +296,8 @@ Use **Save as TXT...** to archive it with commissioning documentation or **Copy 
 ## Validation
 
 Run **Validate** before every deployment. Deployment is blocked while errors exist.
+
+Validation always opens a structured result table. A clean project shows a green `PASS` row; otherwise every result is split into **Severity**, **Object**, and **Problem** for quicker troubleshooting.
 
 Checks include:
 
@@ -393,7 +424,6 @@ Earlier versions were also tested on a TRB145 running RutOS 7.24.2.
 - No standalone Windows installer yet; installation uses Python/pip.
 - 64-bit RutOS datatypes are deferred until exact tokens are verified.
 - Unknown vendor datatypes are skipped rather than guessed.
-- Live diagnostic writes are intentionally unavailable.
 - Carel `Direction` metadata alone does not authorize a write path; select writable targets deliberately.
 
 See `CHANGELOG.md` and the release notes for implementation history.
