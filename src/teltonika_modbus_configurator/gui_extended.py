@@ -218,8 +218,10 @@ class ExtendedProjectEditor(DeploymentEditor):
         elif str(initial.get("function", "")).isdigit(): initial["function"] = _fc_text(int(initial["function"]))
         dlg = FormDialog(self, "Request", [
             ("name", "Name", "text", None), ("function", "Function", "choice", FUNCTION_CHOICES),
-            ("register", "First register", "text", None), ("count", "Read count", "text", None),
-            ("values", "Write value(s)", "text", None), ("data_type", "Data type", "choice", REQUEST_DATA_TYPES),
+            ("register", "First register", "text", None),
+            ("count", "Read count (registers/bits)", "text", None),
+            ("values", "Write values (space-separated)", "text", None),
+            ("data_type", "Data type", "choice", REQUEST_DATA_TYPES),
             ("byte_order", "Byte order", "choice", BYTE_ORDERS), ("enabled", "Enabled", "bool", None),
         ], initial)
         return dlg.values
