@@ -59,15 +59,19 @@ def batch_write_items(
         partitions: list[list] = []
         current: list = []
         start = 0
+        previous_end = -1
         for item in ordered:
             width = register_value_width(item.request.data_type, register_type)
+            item_start = item.request.register
             end = item.request.register + width - 1
-            if current and end - start + 1 > limit:
+            has_gap = bool(current) and item_start > previous_end + 1
+            if current and (has_gap or end - start + 1 > limit):
                 partitions.append(current)
                 current = []
             if not current:
-                start = item.request.register
+                start = item_start
             current.append(item)
+            previous_end = max(previous_end, end) if len(current) > 1 else end
         if current:
             partitions.append(current)
 
