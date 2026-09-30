@@ -182,22 +182,25 @@ class BulkGeneratorWindow(tk.Toplevel):
                          for r in device.requests]
         related = [m for m in self.project.mappings if m.device == device.name]
         layout = allocate_template_mapping_layout(self.project, related) if related else {}
-        self.mappings = [BulkMappingSpec(name_pattern=self._suggest_mapping_pattern(m.name, device.name, m.request), request=m.request,
+        self.mappings = [BulkMappingSpec(name_pattern=self._suggest_mapping_pattern(m.name, device.name), request=m.request,
                                          register_type=m.register_type,
                                          start_register=layout[m.name][0], step=layout[m.name][1],
-                                         enabled=m.enabled, data_type=m.data_type, count=m.count)
-                         for m in related]
+                                         enabled=m.enabled, data_type=m.data_type, count=m.count,
+                                         source_offset=m.source_offset, symbol_data_type=m.symbol_data_type,
+                                         deploy=m.deploy, export_symbol=m.export_symbol)
+                         for m in related if m.name in layout]
         self._sync_transport_fields(); self._refresh_tables()
 
     @staticmethod
-    def _suggest_mapping_pattern(name: str, device_name: str, request: str) -> str:
-        return name.replace(device_name, "{device}") if device_name in name else "{device}_" + (request or "Value")
+    def _suggest_mapping_pattern(name: str, device_name: str) -> str:
+        return name.replace(device_name, "{device}") if device_name in name else "{device}_" + (name or "Value")
 
     def _request_dialog(self, initial=None):
         initial = initial or {"function": "4", "register": "0", "count": "1", "values": "", "data_type": "int16", "byte_order": "high_byte_first"}
         dlg = SmartRequestDialog(self, "Bulk request", [
             ("name", "Name", None), ("function", "Function code", FUNCTIONS), ("register", "First register", None),
-            ("count", "Read count", None), ("values", "Write value(s)", None), ("data_type", "Data type", REQUEST_DATA_TYPES),
+            ("count", "Read count (registers/bits)", None),
+            ("values", "Write values (space-separated)", None), ("data_type", "Data type", REQUEST_DATA_TYPES),
             ("byte_order", "Byte order", tuple(sorted({x for values in BYTE_ORDERS_BY_TYPE.values() for x in values}))),
         ], initial)
         return dlg.values
@@ -296,7 +299,9 @@ class BulkGeneratorWindow(tk.Toplevel):
                 raise ValueError(f"FC{int(request.function):02d} maps to TCP {natural_type}, not {v['register_type']}.")
             self.mappings[i] = BulkMappingSpec(name_pattern=v["name_pattern"], request=v["request"], register_type=v["register_type"],
                                                start_register=int(v["start_register"]), step=int(v["step"]), enabled=m.enabled,
-                                               permissions=self._access_for_request(v["request"]), data_type=v["data_type"], count=int(v["count"] or 1))
+                                               permissions=self._access_for_request(v["request"]), data_type=v["data_type"], count=int(v["count"] or 1),
+                                               source_offset=m.source_offset, symbol_data_type=m.symbol_data_type,
+                                               deploy=m.deploy, export_symbol=m.export_symbol)
             self._refresh_tables()
         except Exception as exc: messagebox.showerror("Mapping", str(exc), parent=self)
 
