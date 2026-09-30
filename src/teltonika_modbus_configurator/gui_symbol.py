@@ -5,6 +5,9 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from .gui_import_scan import ImportBatchScanWindow
+from .live_test import target_for_request
+from .read_batching import batch_read_items
 from .symbol_import import apply_symbol_import_plan, build_symbol_import_plan
 
 
@@ -130,6 +133,8 @@ class SymbolPreviewWindow(tk.Toplevel):
         ttk.Button(footer, text="Close", command=self.destroy).pack(side="right")
         self.import_button = ttk.Button(footer, text="Import selected ready rows", command=self.apply_plan, state="disabled")
         self.import_button.pack(side="right", padx=8)
+        self.scan_button = ttk.Button(footer, text="Scan proposed batches", command=self.scan_batches, state="disabled")
+        self.scan_button.pack(side="right")
         self.refresh()
 
     def _on_mousewheel(self, event):
@@ -169,6 +174,7 @@ class SymbolPreviewWindow(tk.Toplevel):
         self.tree.yview_moveto(y_position)
         self.info_var.set(f"Visible plan: {ready} ready, {skipped} skipped. Select the rows you want to import.")
         self.import_button.configure(state="normal" if ready else "disabled")
+        self.scan_button.configure(state="normal" if ready else "disabled")
 
     def build_plan(self):
         if not self.device_var.get():
@@ -185,6 +191,40 @@ class SymbolPreviewWindow(tk.Toplevel):
         except Exception as exc:
             messagebox.showerror("Symbol import", str(exc), parent=self); return
         self.refresh()
+
+    def scan_batches(self):
+        if self.read_mode_var.get() != "batched" or self.write_only_var.get():
+            messagebox.showinfo(
+                "Batch scan", "Select Batched read import mode; write-only imports have no read batches to scan.",
+                parent=self,
+            )
+            return
+        selected = [self.plan_by_iid[iid] for iid in self.tree.selection() if iid in self.plan_by_iid]
+        indexes = selected or list(self.plan_by_iid.values())
+        items = [
+            self.plan[index] for index in indexes
+            if self.plan[index].request is not None and self.plan[index].mapping is not None
+        ]
+        if not items:
+            messagebox.showinfo("Batch scan", "Build a plan containing ready read rows first.", parent=self)
+            return
+        device_name = self.device_var.get()
+        device = next(
+            source for source in (*self.parent.project.devices, *self.parent.project.tcp_clients)
+            if source.name == device_name
+        )
+        requests, _mappings, _items = batch_read_items(device.requests, items)
+        execute = self.parent.prompt_live_test_executor()
+        if execute is None:
+            return
+        targets = [
+            target_for_request(
+                self.parent.project.devices, self.parent.project.tcp_clients,
+                self.parent.project.connections, device_name=device_name, request=request,
+            )
+            for request in requests
+        ]
+        ImportBatchScanWindow(self, targets=targets, execute=execute)
 
     def apply_plan(self):
         selected = [self.plan_by_iid[iid] for iid in self.tree.selection() if iid in self.plan_by_iid]
