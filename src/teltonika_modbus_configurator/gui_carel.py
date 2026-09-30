@@ -7,13 +7,15 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from .atvise_symbols import AtviseSymbolExportError, atvise_symbol_line, is_physical_batch_mapping
-from .carel_convert import apply_carel_import_plan, build_carel_import_plan
+from .carel_convert import apply_carel_import_plan, batch_carel_read_items, build_carel_import_plan
 from .carel_import import load_carel_xls
 from .gui import enabled_mark, vars_for
+from .gui_import_scan import ImportBatchScanWindow
 from .gui_scada import ScadaProjectEditor
 from .gui_widgets import tree_with_scrollbars
 from .mapping_lifecycle import remove_server_mappings
 from .models import ServerMapping
+from .live_test import target_for_request
 
 
 class CarelProjectEditor(ScadaProjectEditor):
@@ -357,6 +359,8 @@ class CarelPreviewWindow(tk.Toplevel):
         ttk.Button(footer, text="Close", command=self.destroy).pack(side="right")
         self.import_button = ttk.Button(footer, text="Import selected ready rows", command=self.apply_plan, state="disabled")
         self.import_button.pack(side="right", padx=(0, 8))
+        self.scan_button = ttk.Button(footer, text="Scan proposed batches", command=self.scan_batches, state="disabled")
+        self.scan_button.pack(side="right", padx=(0, 8))
 
     def _row_visible(self, row) -> bool:
         area = self.area_var.get(); direction = self.direction_var.get()
@@ -398,6 +402,7 @@ class CarelPreviewWindow(tk.Toplevel):
             f"{conflicts} conflicts. Select ready rows to import."
         )
         self.import_button.configure(state="normal" if ready else "disabled")
+        self.scan_button.configure(state="normal" if ready else "disabled")
 
     def apply_filter(self):
         self._populate_plan_rows() if self.plan else self._populate_parsed_rows(self.preview.rows)
@@ -419,6 +424,40 @@ class CarelPreviewWindow(tk.Toplevel):
         except Exception as exc:
             messagebox.showerror("Carel import", str(exc), parent=self); return
         self._populate_plan_rows()
+
+    def scan_batches(self):
+        if self.read_mode_var.get() != "batched" or self.write_only_var.get():
+            messagebox.showinfo(
+                "Batch scan", "Select Batched read import mode; write-only imports have no read batches to scan.",
+                parent=self,
+            )
+            return
+        selected = [self.plan_by_iid[iid] for iid in self.tree.selection() if iid in self.plan_by_iid]
+        indexes = selected or list(self.plan_by_iid.values())
+        items = [
+            self.plan[index] for index in indexes
+            if self.plan[index].request is not None and self.plan[index].mapping is not None
+        ]
+        if not items:
+            messagebox.showinfo("Batch scan", "Build a plan containing ready read rows first.", parent=self)
+            return
+        device_name = self.device_targets[self.device_var.get()]
+        device = next(
+            source for source in (*self.parent.project.devices, *self.parent.project.tcp_clients)
+            if source.name == device_name
+        )
+        requests, _mappings, _items = batch_carel_read_items(device, items)
+        execute = self.parent.prompt_live_test_executor()
+        if execute is None:
+            return
+        targets = [
+            target_for_request(
+                self.parent.project.devices, self.parent.project.tcp_clients,
+                self.parent.project.connections, device_name=device_name, request=request,
+            )
+            for request in requests
+        ]
+        ImportBatchScanWindow(self, targets=targets, execute=execute)
 
     def apply_plan(self):
         if not self.plan: return

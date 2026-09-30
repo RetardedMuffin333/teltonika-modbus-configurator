@@ -189,8 +189,9 @@ Open **Import → Carel cDesign table (XLS/XLSX/CSV)...**:
 4. Select **Batched (recommended)**.
 5. Build the import plan.
 6. Review skipped/invalid rows, datatypes, directions, and addresses.
-7. Select the required rows and import them.
-8. Create write companions only for variables that genuinely need SCADA write access.
+7. With batched mode selected, use **Scan proposed batches** to test the physical read blocks through the RutOS API before importing them.
+8. Select the required rows and import them.
+9. Create write companions only for variables that genuinely need SCADA write access.
 9. Validate the project.
 
 Recognized columns include:
@@ -221,8 +222,11 @@ A `.Symbol` file contains register metadata, not the device connection. First cr
 3. Choose the server mapping start.
 4. Select **Batched (recommended)**.
 5. Build the plan and inspect conflicts/unrecognized lines.
-6. Import the selected ready rows.
-7. Validate and export a fresh `.Symbol` file from the finished project.
+6. With batched mode selected, use **Scan proposed batches** to test the physical read blocks through the RutOS API before importing them.
+7. Import the selected ready rows.
+8. Validate and export a fresh `.Symbol` file from the finished project.
+
+The pre-import scan does not change the project or deploy anything. It tests the same proposed FC01–FC04 block requests that the importer would create and reports response time, `OK`, or the device's Modbus error such as `Illegal Data Address`. With no row selection it scans all ready rows; with selected rows it scans only batches built from that selection.
 
 Verified prefixes:
 

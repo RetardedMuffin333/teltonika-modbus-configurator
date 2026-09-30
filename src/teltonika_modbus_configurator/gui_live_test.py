@@ -200,7 +200,7 @@ class LiveModbusTesterWindow(tk.Toplevel):
 
         self.write_mode_var = tk.StringVar(value="existing")
         ttk.Radiobutton(tab, text="Existing write request", value="existing", variable=self.write_mode_var, command=self._write_mode_changed).grid(row=1, column=0, sticky="w")
-        ttk.Radiobutton(tab, text="Ad-hoc write", value="adhoc", variable=self.write_mode_var, command=self._write_mode_changed).grid(row=1, column=1, sticky="w")
+        ttk.Radiobutton(tab, text="Manual write", value="adhoc", variable=self.write_mode_var, command=self._write_mode_changed).grid(row=1, column=1, sticky="w")
 
         self.write_existing_var = tk.StringVar()
         ttk.Label(tab, text="Project write request:").grid(row=2, column=0, sticky="w", pady=6)

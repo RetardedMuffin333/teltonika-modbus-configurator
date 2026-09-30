@@ -52,24 +52,27 @@ class V06ProjectEditor(V05ProjectEditor):
         )
 
     def open_live_modbus_tester(self):
+        execute = self.prompt_live_test_executor()
+        if execute is None:
+            return
+        LiveModbusTesterWindow(self, self.project, execute=execute)
+
+    def prompt_live_test_executor(self):
+        """Prompt once for RutOS WebUI credentials and return a test callable."""
         host = simpledialog.askstring("RutOS API", "Gateway IP / hostname:", initialvalue="192.168.2.1", parent=self)
         if not host:
-            return
+            return None
         username = simpledialog.askstring("RutOS API", "WebUI/API username:", initialvalue="admin", parent=self) or "admin"
         password = simpledialog.askstring("RutOS API", "WebUI/API password:", show="*", parent=self)
         if password is None:
-            return
+            return None
         https = messagebox.askyesno(
             "RutOS API protocol",
             "Use HTTPS?\n\nChoose No for HTTP (typical on older RUT956 firmware).",
             parent=self,
         )
         client = RutOSApiClient(host, username, password, https=https, verify_tls=False)
-        LiveModbusTesterWindow(
-            self,
-            self.project,
-            execute=lambda target: execute_live_test(client, target),
-        )
+        return lambda target: execute_live_test(client, target)
 
 
 def main() -> None:
