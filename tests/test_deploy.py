@@ -3,7 +3,9 @@ from pathlib import Path
 from teltonika_modbus_configurator.deploy import (
     RemoteConfig,
     apply_generated,
+    render_gateway_preflight,
     render_diff,
+    run_gateway_preflight,
     save_local_backup,
 )
 from teltonika_modbus_configurator.uci_generator import GeneratedUci
@@ -116,3 +118,57 @@ def test_runtime_check_is_skipped_when_tcp_server_disabled() -> None:
 
     runtime_checks = [call for call in session.calls if "netstat" in call[0]]
     assert runtime_checks == []
+
+
+class PreflightSession:
+    def run(self, command, **_kwargs):
+        if "ubus call system board" in command:
+            return '{"model":"RUT956","release":{"description":"RutOS 7.18"}}'
+        if "/etc/config/modbus_client" in command:
+            return "/etc/config/modbus_client=present\n/etc/config/modbus_server=present\n"
+        if "/etc/init.d/modbus_client" in command:
+            return "/etc/init.d/modbus_client=present\n/etc/init.d/modbus_server=present\n"
+        if "modbus_client.main.enabled" in command:
+            return "1\n"
+        if "modbus_server.modbus.enabled" in command:
+            return "1\n"
+        if "ubus list" in command:
+            return "modbus_client\nmodbus_server.modbus\n"
+        if "modbus_server.modbus.port" in command:
+            return "502\n"
+        if ":502" in command or ":(80|443)" in command:
+            return "yes\n"
+        if "opkg list-installed" in command:
+            return "modbus-client - 1.0\nmodbus-server - 1.0\n"
+        raise AssertionError(f"Unexpected command: {command}")
+
+
+def test_gateway_preflight_reports_ready_gateway():
+    report = run_gateway_preflight(PreflightSession())
+
+    assert report.model == "RUT956"
+    assert report.firmware == "RutOS 7.18"
+    assert report.errors == 0
+    assert report.warnings == 0
+    rendered = render_gateway_preflight(report, host="10.33.22.1")
+    assert "Result:   0 error(s), 0 warning(s)" in rendered
+    assert "[PASS" in rendered
+    assert "read-only" in rendered
+
+
+def test_gateway_preflight_does_not_require_disabled_unused_services():
+    class DisabledSession(PreflightSession):
+        def run(self, command, **kwargs):
+            if "modbus_client.main.enabled" in command or "modbus_server.modbus.enabled" in command:
+                return "0\n"
+            if "ubus list" in command:
+                return ""
+            if ":502" in command:
+                return "no\n"
+            return super().run(command, **kwargs)
+
+    report = run_gateway_preflight(
+        DisabledSession(), require_client=False, require_server=False,
+    )
+
+    assert report.errors == 0
