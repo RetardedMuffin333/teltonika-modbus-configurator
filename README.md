@@ -80,6 +80,23 @@ For a gateway that already contains a configuration:
 
 For a new project, select **File → First Project Wizard...**. The wizard creates the initial RTU/TCP structure and can continue directly to a Carel table or atvise Symbol import. Connections and devices can also be created manually or with the Bulk Device Generator. Passwords are requested when needed and are not stored in YAML.
 
+The most recently entered gateway IP/hostname is reused by live import, diagnostics, preview, deployment, and rollback. The initial default is `10.33.22.1`. Only the address is stored locally; usernames and passwords are never saved by the application.
+
+### Commissioning checklist for colleagues
+
+Before handing a project over or applying it to a production gateway:
+
+1. Confirm that the required Modbus packages and client/server services are installed and enabled in RutOS.
+2. Save the editable project as YAML before making changes.
+3. Build the import plan and resolve conflicts or unsupported datatypes.
+4. For batched imports, run **Scan proposed batches** and split every block that returns a Modbus exception.
+5. Run **Validate** and resolve every error; review warnings.
+6. Save a **Project Report** with the commissioning documentation.
+7. Run **Preview live diff** and check that unrelated UCI sections are unchanged.
+8. Apply only after reviewing the complete diff and confirming the operation.
+9. Run **Scan Device** and test required writes with feedback/readback.
+10. Export the atvise `.Symbol` file and archive the final YAML project plus recovery snapshot information.
+
 ## Main window
 
 The tabs follow the data path through the gateway:
@@ -296,7 +313,7 @@ RutOS-style request terminology is used throughout the editor:
 - **Read count (registers/bits)** is the number of consecutive source addresses read by FC01–FC04.
 - **Write values (space-separated)** is the payload sent by FC05/FC06/FC15/FC16. Single writes contain one value; multiple writes may contain several values.
 
-Write tests send real commands to field equipment. Confirm the target register and safe value, then verify the result through the normal feedback/readback request.
+Write tests send real commands to field equipment. The tester shows the device, Unit ID, function, register, value, datatype, and byte order in a final confirmation dialog. Review them, select **OK**, then verify the result through the normal feedback/readback request.
 
 ## Project Report
 
@@ -334,7 +351,7 @@ Generates the local RutOS configuration without contacting a gateway.
 
 ### Apply
 
-**Deployment → Apply to live TRB...** validates, reads the current configuration, shows the complete diff, requires typing `APPLY`, creates recovery data, writes the configuration, restarts the Modbus service, and verifies the result.
+**Deployment → Apply to live TRB...** validates, reads the current configuration, and shows the complete diff. After review, select **Confirm and apply to TRB**. The configurator creates recovery data, writes the configuration, restarts the Modbus service, and verifies the result.
 
 Network work runs in the background. Do not close the application or power off the gateway during apply/verification.
 
@@ -433,7 +450,9 @@ Earlier versions were also tested on a TRB145 running RutOS 7.24.2.
 ## Safety
 
 - Review the complete live diff before apply.
+- Treat the final confirmation button as authorization to write immediately; it does not introduce a delay or second password prompt.
 - Expose only write targets SCADA genuinely needs.
+- Before confirming a live write, verify device, Unit ID, function, register, value, datatype, and byte order in the summary.
 - Never enable generated write requests for cyclic execution.
 - Keep a known-good YAML project and RutOS backup.
 - Do not commit site UCI exports, backups, passwords, keys, or production project files.
