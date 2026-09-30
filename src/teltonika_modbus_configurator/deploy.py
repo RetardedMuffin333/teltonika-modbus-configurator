@@ -24,6 +24,28 @@ class RemoteConfig:
     modbus_server: str
 
 
+@dataclass(slots=True)
+class PreflightCheck:
+    status: str
+    name: str
+    detail: str
+
+
+@dataclass(slots=True)
+class GatewayPreflightReport:
+    model: str
+    firmware: str
+    checks: list[PreflightCheck]
+
+    @property
+    def errors(self) -> int:
+        return sum(check.status == "ERROR" for check in self.checks)
+
+    @property
+    def warnings(self) -> int:
+        return sum(check.status == "WARNING" for check in self.checks)
+
+
 class SshSession:
     def __init__(
         self,
@@ -106,6 +128,129 @@ def read_remote_config(session: SshSession) -> RemoteConfig:
         modbus_client=session.run("uci export modbus_client"),
         modbus_server=session.run("uci export modbus_server"),
     )
+
+
+def run_gateway_preflight(
+    session: SshSession,
+    *,
+    require_client: bool = True,
+    require_server: bool = True,
+) -> GatewayPreflightReport:
+    """Inspect RutOS Modbus readiness without changing the gateway."""
+    import json
+
+    board_text = session.run("ubus call system board 2>/dev/null || echo '{}'")
+    try:
+        board = json.loads(board_text)
+    except (TypeError, ValueError):
+        board = {}
+    release = board.get("release") if isinstance(board.get("release"), dict) else {}
+    model = str(board.get("model") or board.get("board_name") or "Unknown")
+    firmware = str(release.get("description") or release.get("version") or "Unknown")
+
+    checks: list[PreflightCheck] = []
+    configs = session.run(
+        "for f in /etc/config/modbus_client /etc/config/modbus_server; do "
+        "[ -f \"$f\" ] && echo \"$f=present\" || echo \"$f=missing\"; done"
+    )
+    for package in ("modbus_client", "modbus_server"):
+        present = f"/etc/config/{package}=present" in configs
+        checks.append(PreflightCheck(
+            "PASS" if present else "ERROR", f"{package} configuration",
+            "/etc/config file is present." if present else "/etc/config file is missing; install/repair the RutOS Modbus package.",
+        ))
+
+    init_scripts = session.run(
+        "for f in /etc/init.d/modbus_client /etc/init.d/modbus_server; do "
+        "[ -x \"$f\" ] && echo \"$f=present\" || echo \"$f=missing\"; done"
+    )
+    for service in ("modbus_client", "modbus_server"):
+        present = f"/etc/init.d/{service}=present" in init_scripts
+        checks.append(PreflightCheck(
+            "PASS" if present else "ERROR", f"{service} service",
+            "Init script is installed." if present else "Init script is missing; the service cannot be managed safely.",
+        ))
+
+    client_enabled = session.run(
+        "value=$(uci -q get modbus_client.main.enabled); [ -n \"$value\" ] && echo \"$value\" || echo 0"
+    ).strip() == "1"
+    server_enabled = session.run(
+        "value=$(uci -q get modbus_server.modbus.enabled); [ -n \"$value\" ] && echo \"$value\" || echo 0"
+    ).strip() == "1"
+    for name, enabled, required in (
+        ("Modbus Client enabled", client_enabled, require_client),
+        ("Modbus TCP Server enabled", server_enabled, require_server),
+    ):
+        if enabled:
+            status, detail = "PASS", "Enabled in UCI."
+        elif required:
+            status, detail = "ERROR", "Disabled in UCI but required by the current project."
+        else:
+            status, detail = "INFO", "Disabled in UCI and not required by the current project."
+        checks.append(PreflightCheck(status, name, detail))
+
+    runtime = session.run("ubus list 2>/dev/null | grep '^modbus_' || true")
+    client_runtime = "modbus_client" in runtime
+    server_runtime = "modbus_server" in runtime
+    for name, running, enabled in (
+        ("Modbus Client runtime", client_runtime, client_enabled),
+        ("Modbus Server runtime", server_runtime, server_enabled),
+    ):
+        if running:
+            status, detail = "PASS", "RutOS ubus object is available."
+        elif enabled:
+            status, detail = "WARNING", "Enabled, but no matching ubus object was found; check service status."
+        else:
+            status, detail = "INFO", "No runtime object expected while disabled."
+        checks.append(PreflightCheck(status, name, detail))
+
+    port_text = session.run(
+        "value=$(uci -q get modbus_server.modbus.port); [ -n \"$value\" ] && echo \"$value\" || echo 502"
+    ).strip()
+    port = int(port_text) if port_text.isdigit() else 502
+    listening = session.run(
+        f"netstat -lnt 2>/dev/null | grep -q ':{port}[[:space:]]' && echo yes || echo no"
+    ).strip() == "yes"
+    if listening:
+        status, detail = "PASS", f"TCP port {port} is listening."
+    elif server_enabled:
+        status, detail = "ERROR", f"TCP Server is enabled but port {port} is not listening."
+    else:
+        status, detail = "INFO", f"Port {port} is not listening while the TCP Server is disabled."
+    checks.append(PreflightCheck(status, "Modbus TCP listener", detail))
+
+    webui = session.run(
+        "netstat -lnt 2>/dev/null | grep -Eq ':(80|443)[[:space:]]' && echo yes || echo no"
+    ).strip() == "yes"
+    checks.append(PreflightCheck(
+        "PASS" if webui else "WARNING", "RutOS WebUI/API listener",
+        "HTTP/HTTPS listener found." if webui else "No port 80/443 listener found; Live Modbus Tester API login may fail.",
+    ))
+
+    packages = session.run("opkg list-installed 2>/dev/null | grep -i modbus || true").strip()
+    checks.append(PreflightCheck(
+        "INFO", "Installed Modbus packages",
+        packages.replace("\n", "; ") if packages else "No package names reported by opkg; configuration/service checks above are authoritative.",
+    ))
+    return GatewayPreflightReport(model=model, firmware=firmware, checks=checks)
+
+
+def render_gateway_preflight(report: GatewayPreflightReport, *, host: str) -> str:
+    lines = [
+        "TELTONIKA GATEWAY PREFLIGHT",
+        "=" * 30,
+        f"Host:     {host}",
+        f"Model:    {report.model}",
+        f"Firmware: {report.firmware}",
+        f"Result:   {report.errors} error(s), {report.warnings} warning(s)",
+        "",
+    ]
+    lines.extend(f"[{check.status:<7}] {check.name}: {check.detail}" for check in report.checks)
+    lines.extend([
+        "",
+        "This check is read-only. It does not install packages, change UCI, or restart services.",
+    ])
+    return "\n".join(lines) + "\n"
 
 
 def render_diff(current: RemoteConfig, proposed: GeneratedUci) -> str:

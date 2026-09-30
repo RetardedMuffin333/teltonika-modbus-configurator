@@ -34,6 +34,7 @@ TCP devices --- Ethernet -/       |
 - YAML project save/load.
 - Live RutOS configuration import over SSH.
 - UCI preview, validation, live diff, guarded deployment, backups, and rollback.
+- Read-only gateway preflight for RutOS model/firmware, Modbus configuration, services, runtime objects, and listeners.
 - Live read diagnostics, device scans, and guarded write tests through the RutOS Web API.
 - Guided first-project wizard, structured validation results, import previews, and conflict handling.
 - A shareable project report with batching, workload, address-block, validation, and safety summaries.
@@ -340,6 +341,21 @@ Checks include:
 Review warnings even when they do not block deployment.
 
 ## Deployment and rollback
+
+### Gateway preflight
+
+Run **Deployment → Gateway preflight...** before the first import/test/deployment on a gateway or after a firmware/package change. The read-only SSH check reports:
+
+- RutOS model and firmware;
+- presence of `modbus_client` and `modbus_server` UCI configurations;
+- presence of both Modbus init scripts;
+- whether Client and TCP Server are enabled when required by the current project;
+- Modbus runtime objects;
+- the configured Modbus TCP listening port;
+- an HTTP/HTTPS listener for WebUI/API diagnostics;
+- Modbus packages reported by `opkg`.
+
+`ERROR` means a required component is missing or inconsistent and should be resolved before deployment. `WARNING` indicates a runtime/API condition that needs checking. `INFO` is informational or describes a service the current project does not require. Preflight does not install packages, change UCI, enable services, or restart the gateway.
 
 ### Preview UCI
 
