@@ -1,4 +1,4 @@
-"""Read-only live Modbus diagnostic window for v0.6."""
+"""Live Modbus read, write, and scan diagnostics through the RutOS API."""
 
 from __future__ import annotations
 
@@ -39,7 +39,10 @@ class LiveModbusTesterWindow(tk.Toplevel):
         self.project = project
         self.execute = execute
         self.targets = project_test_targets(project.devices, project.tcp_clients, project.connections)
-        self.target_by_label = {target.summary: target for target in self.targets}
+        self.read_target_list = [
+            target for target in self.targets if int(target.request.function) in READ_FUNCTIONS
+        ]
+        self.target_by_label = {target.summary: target for target in self.read_target_list}
         self.write_target_list = write_targets(self.targets)
         self.write_target_by_label = {target.summary: target for target in self.write_target_list}
         self.templates = device_templates(self.targets)
@@ -69,7 +72,7 @@ class LiveModbusTesterWindow(tk.Toplevel):
 
     def _build_existing_tab(self, notebook):
         tab = ttk.Frame(notebook, padding=12)
-        notebook.add(tab, text="Existing Request")
+        notebook.add(tab, text="Configured Read")
         self.target_var = tk.StringVar()
         self.protocol_var = tk.StringVar(value="-")
         self.device_id_var = tk.StringVar(value="-")
@@ -80,8 +83,8 @@ class LiveModbusTesterWindow(tk.Toplevel):
         self.dtype_var = tk.StringVar(value="-")
         self.order_var = tk.StringVar(value="-")
 
-        ttk.Label(tab, text="Existing project request:").grid(row=0, column=0, sticky="w")
-        self.target_combo = ttk.Combobox(tab, textvariable=self.target_var, values=[t.summary for t in self.targets], state="readonly", width=70)
+        ttk.Label(tab, text="Configured read request:").grid(row=0, column=0, sticky="w")
+        self.target_combo = ttk.Combobox(tab, textvariable=self.target_var, values=[t.summary for t in self.read_target_list], state="readonly", width=70)
         self.target_combo.grid(row=0, column=1, columnspan=3, sticky="ew", padx=(8, 0))
         self.target_combo.bind("<<ComboboxSelected>>", lambda _event: self._target_changed())
 
@@ -93,15 +96,15 @@ class LiveModbusTesterWindow(tk.Toplevel):
             ttk.Label(tab, textvariable=variable).grid(row=row, column=column + 1, sticky="w", padx=(8, 20), pady=5)
 
         ttk.Separator(tab).grid(row=5, column=0, columnspan=4, sticky="ew", pady=10)
-        self.test_button = ttk.Button(tab, text="TEST REQUEST", command=self._test_existing)
+        self.test_button = ttk.Button(tab, text="RUN READ", command=self._test_existing)
         self.test_button.grid(row=6, column=0, columnspan=4, pady=(0, 10))
         self._build_result_panel(tab, 7)
         tab.columnconfigure(1, weight=1)
         tab.columnconfigure(3, weight=1)
         tab.rowconfigure(11, weight=1)
 
-        if self.targets:
-            first = next((t for t in self.targets if int(t.request.function) in READ_FUNCTIONS), self.targets[0])
+        if self.read_target_list:
+            first = self.read_target_list[0]
             self.target_var.set(first.summary)
             self._target_changed()
         else:
@@ -110,7 +113,7 @@ class LiveModbusTesterWindow(tk.Toplevel):
 
     def _build_adhoc_tab(self, notebook):
         tab = ttk.Frame(notebook, padding=12)
-        notebook.add(tab, text="Ad-hoc Test")
+        notebook.add(tab, text="Manual Read")
         self.adhoc_device_var = tk.StringVar()
         self.adhoc_function_var = tk.StringVar(value="FC03 Read Holding Registers")
         self.adhoc_register_var = tk.StringVar(value="0")
@@ -140,7 +143,7 @@ class LiveModbusTesterWindow(tk.Toplevel):
             self.adhoc_device_var.set(self.templates[0].device_summary)
         self.adhoc_function_var.trace_add("write", lambda *_args: self._adhoc_function_changed())
 
-        ttk.Button(tab, text="READ", command=self._test_adhoc).grid(row=6, column=0, columnspan=2, pady=(14, 12))
+        ttk.Button(tab, text="RUN MANUAL READ", command=self._test_adhoc).grid(row=6, column=0, columnspan=2, pady=(14, 12))
         ttk.Label(tab, text="Status:").grid(row=7, column=0, sticky="nw")
         ttk.Label(tab, textvariable=self.adhoc_status_var, wraplength=650, justify="left").grid(row=7, column=1, sticky="w", padx=(8, 0))
         ttk.Label(tab, text="Response time:").grid(row=8, column=0, sticky="w", pady=5)
@@ -156,7 +159,7 @@ class LiveModbusTesterWindow(tk.Toplevel):
 
     def _build_scan_tab(self, notebook):
         tab = ttk.Frame(notebook, padding=12)
-        notebook.add(tab, text="Device Scan")
+        notebook.add(tab, text="Scan Device")
         self.scan_device_var = tk.StringVar()
         self.scan_status_var = tk.StringVar(value="Scan all enabled read requests for one configured device.")
         ttk.Label(tab, text="Device:").grid(row=0, column=0, sticky="w")
@@ -188,7 +191,7 @@ class LiveModbusTesterWindow(tk.Toplevel):
 
     def _build_write_tab(self, notebook):
         tab = ttk.Frame(notebook, padding=12)
-        notebook.add(tab, text="Write Test")
+        notebook.add(tab, text="Write Request")
         warning = (
             "DANGER: This sends a real Modbus command to the field device. "
             "Confirm the register and value, make sure the equipment is safe, and use feedback/readback afterward."
@@ -205,7 +208,7 @@ class LiveModbusTesterWindow(tk.Toplevel):
         self.write_existing_combo.grid(row=2, column=1, columnspan=3, sticky="ew", pady=6)
         self.write_existing_combo.bind("<<ComboboxSelected>>", lambda _event: self._existing_write_changed())
         self.write_existing_values_var = tk.StringVar(value="0")
-        ttk.Label(tab, text="Test value(s):").grid(row=3, column=0, sticky="w", pady=6)
+        ttk.Label(tab, text="Values to write:").grid(row=3, column=0, sticky="w", pady=6)
         self.write_existing_values_entry = ttk.Entry(tab, textvariable=self.write_existing_values_var, width=34)
         self.write_existing_values_entry.grid(row=3, column=1, sticky="w", pady=6)
 
@@ -219,7 +222,7 @@ class LiveModbusTesterWindow(tk.Toplevel):
             ("Target device", self.write_device_var, [target.device_summary for target in self.templates]),
             ("Function", self.write_function_var, list(WRITE_FUNCTION_CHOICES)),
             ("Register", self.write_register_var, None),
-            ("Value(s)", self.write_values_var, None),
+            ("Values to write", self.write_values_var, None),
             ("Data type", self.write_dtype_var, DATA_TYPES),
             ("Byte order", self.write_order_var, BYTE_ORDERS),
         )
@@ -293,10 +296,10 @@ class LiveModbusTesterWindow(tk.Toplevel):
         self.order_var.set(request.byte_order)
         if int(request.function) in READ_FUNCTIONS:
             self.test_button.configure(state="normal" if self.execute else "disabled")
-            self.status_var.set("Ready for read-only test." if self.execute else "Transport not connected yet.")
+            self.status_var.set("Ready to run configured read." if self.execute else "Transport not connected yet.")
         else:
             self.test_button.configure(state="disabled")
-            self.status_var.set("Write requests are intentionally disabled in v0.6 live testing.")
+            self.status_var.set("Select write requests on the Write Request tab.")
 
     def _test_existing(self):
         target = self._selected_target()
