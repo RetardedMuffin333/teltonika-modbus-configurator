@@ -25,7 +25,9 @@ def can_replace_name(project: Project, *, device_name: str, name: str) -> bool:
     return not foreign_mapping
 
 
-def replace_import_names(project: Project, *, device_name: str, names: set[str]) -> None:
+def replace_import_names(
+    project: Project, *, device_name: str, names: set[str], write_only: bool = False
+) -> None:
     """Remove matching imported values and their write companions safely.
 
     Symbol-only aliases may share a physical batch. A physical batch is removed
@@ -41,7 +43,9 @@ def replace_import_names(project: Project, *, device_name: str, names: set[str])
     if source is None:
         raise ValueError(f"Target device {device_name!r} does not exist.")
 
-    replace_names = set(names) | {f"{name}_w" for name in names}
+    replace_names = {f"{name}_w" for name in names}
+    if not write_only:
+        replace_names |= set(names)
     candidate_batches = {
         mapping.request
         for mapping in project.mappings

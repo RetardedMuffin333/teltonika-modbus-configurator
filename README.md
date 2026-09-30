@@ -142,7 +142,8 @@ The recommended import mode groups compatible reads into bounded blocks:
 - A 32-bit value always remains entirely inside one block.
 - Each function/address space is batched separately.
 
-Source registers `225–242`, for example, become one request named `Batch_FC03_225_242`.
+Source registers `225–242`, for example, become one request named `Batch_HR_225_242`.
+Batch names use the Modbus area (`DA`, `DI`, `HR`, `IR`) instead of function-code numbers.
 
 Only the physical batch request and block mapping are deployed to RutOS. Individual variable names, datatypes, and offsets remain as symbol aliases used for atvise export.
 

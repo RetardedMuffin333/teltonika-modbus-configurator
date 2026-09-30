@@ -18,6 +18,7 @@ from .scada_write import (
     CAREL_AUTO_WRITE_START,
     create_scada_write_target_from_definition,
 )
+from .write_batching import batch_write_items
 
 
 @dataclass(slots=True)
@@ -82,6 +83,7 @@ def build_carel_import_plan(
     add_one_to_index: bool = True,
     mapping_start: int = 1025,
     conflict_policy: str = "skip",
+    write_only: bool = False,
 ) -> list[CarelPlannedItem]:
     """Build a non-destructive import plan for an existing RTU or TCP client."""
     target_name = _device_name(device_name=device_name, tcp_device_name=tcp_device_name)
@@ -107,15 +109,21 @@ def build_carel_import_plan(
             result.append(CarelPlannedItem(row, None, None, f"Skip: invalid register/index {row.register!r}")); continue
         if not row.name:
             result.append(CarelPlannedItem(row, None, None, "Skip: empty variable name")); continue
-        if row.name in planned_request_names:
+        conflict_name = f"{row.name}_w" if write_only else row.name
+        if write_only and (
+            not is_carel_readwrite(row)
+            or area[1] not in {"coil", "holding_register"}
+        ):
+            result.append(CarelPlannedItem(row, None, None, "Skip: value is not writable")); continue
+        if conflict_name in planned_request_names:
             result.append(CarelPlannedItem(row, None, None, f"Skip: duplicate request name {row.name}")); continue
-        if row.name in planned_mapping_names:
+        if conflict_name in planned_mapping_names:
             result.append(CarelPlannedItem(row, None, None, f"Skip: duplicate mapping name {row.name}")); continue
-        existing_conflict = row.name in existing_request_names or row.name in existing_mapping_names
+        existing_conflict = conflict_name in existing_request_names or conflict_name in existing_mapping_names
         replace_existing = existing_conflict and conflict_policy == REPLACE_MATCHING
         if existing_conflict and not replace_existing:
             result.append(CarelPlannedItem(row, None, None, f"Skip: existing request or mapping {row.name}")); continue
-        if replace_existing and not can_replace_name(project, device_name=target_name, name=row.name):
+        if replace_existing and not can_replace_name(project, device_name=target_name, name=conflict_name):
             result.append(CarelPlannedItem(row, None, None, f"Skip: mapping name {row.name} belongs to another device")); continue
 
         function, register_type = area; data_type, byte_order = dtype
@@ -123,7 +131,7 @@ def build_carel_import_plan(
         width = register_value_width(data_type, register_type)
         server_register = first_free_register_range(shadow, register_type=register_type, width=width, default=mapping_start)
         mapping = ServerMapping(name=row.name, device=target_name, request=row.name, register=server_register, register_type=register_type, enabled=True, permissions="r", data_type=data_type, count=1)
-        shadow.mappings.append(mapping); planned_request_names.add(row.name); planned_mapping_names.add(row.name)
+        shadow.mappings.append(mapping); planned_request_names.add(conflict_name); planned_mapping_names.add(conflict_name)
         status = "Ready (replace existing)" if replace_existing else "Ready"
         result.append(CarelPlannedItem(row, request, mapping, status, replace_existing))
     return result
@@ -168,6 +176,8 @@ def apply_carel_import_plan(
     create_write_companions: bool = False,
     write_mapping_start: int = CAREL_AUTO_WRITE_START,
     batch_reads: bool = False,
+    write_only: bool = False,
+    batch_writes: bool = False,
 ) -> tuple[int, int]:
     """Apply selected rows and optionally create write companions for ReadWrite values.
 
@@ -184,19 +194,42 @@ def apply_carel_import_plan(
         project,
         device_name=target_name,
         names={item.source.name for item in ready if item.replace_existing},
+        write_only=write_only,
     )
-    packed = repack_carel_import_items(project, ready, mapping_start=mapping_start)
+    packed = ready if write_only else repack_carel_import_items(project, ready, mapping_start=mapping_start)
     semantic_items = list(packed)
-    if batch_reads:
+    if write_only:
+        pass
+    elif batch_reads:
         block_requests, block_mappings, packed = batch_carel_read_items(device, packed)
         device.requests.extend(block_requests)
         project.mappings.extend(block_mappings)
     else:
         device.requests.extend(item.request for item in packed if item.request is not None)
-    project.mappings.extend(item.mapping for item in packed if item.mapping is not None)
+    if not write_only:
+        project.mappings.extend(item.mapping for item in packed if item.mapping is not None)
 
     write_count = 0
-    if create_write_companions:
+    if create_write_companions or write_only:
+        writable_items = [
+            item for item in semantic_items
+            if is_carel_readwrite(item.source)
+            and item.mapping is not None
+            and item.request is not None
+            and item.mapping.register_type in {"coil", "holding_register"}
+        ]
+        if batch_writes:
+            write_requests, write_blocks, write_aliases = batch_write_items(
+                project,
+                device_name=target_name,
+                items=writable_items,
+                mapping_start=write_mapping_start,
+            )
+            device.requests.extend(write_requests)
+            project.mappings.extend(write_blocks)
+            project.mappings.extend(write_aliases)
+            write_count = len(write_aliases)
+            return (0 if write_only else len(packed)), write_count
         final_mapping_by_name = {
             item.mapping.name: item.mapping for item in packed if item.mapping is not None
         }
@@ -213,4 +246,4 @@ def apply_carel_import_plan(
                 write_block_start=write_mapping_start,
             )
             write_count += 1
-    return len(packed), write_count
+    return (0 if write_only else len(packed)), write_count

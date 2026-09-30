@@ -37,19 +37,19 @@ def test_selected_individual_reads_become_batches_and_keep_symbol_names():
 
     assert plan.ready_count == 3
     assert [(request.name, request.register, request.count) for request in plan.batch_requests] == [
-        ("Batch_FC03_10_12", 10, 3),
-        ("Batch_FC01_20_20", 20, 1),
+        ("Batch_HR_10_12", 10, 3),
+        ("Batch_DA_20_20", 20, 1),
     ]
     assert apply_existing_batch_plan(project, plan) == 3
 
     source = project.tcp_clients[0]
     assert {request.name for request in source.requests} == {
-        "WriteSetpoint", "Batch_FC03_10_12", "Batch_FC01_20_20"
+        "WriteSetpoint", "Batch_HR_10_12", "Batch_DA_20_20"
     }
     deployed = [mapping for mapping in project.mappings if mapping.deploy]
     aliases = {mapping.name: mapping for mapping in project.mappings if not mapping.deploy}
     assert {mapping.name for mapping in deployed} == {
-        "WriteSetpoint", "Batch_FC03_10_12", "Batch_FC01_20_20"
+        "WriteSetpoint", "Batch_HR_10_12", "Batch_DA_20_20"
     }
     assert aliases["OutsideTemp"].symbol_data_type == "float32"
     assert aliases["OutsideTemp"].register == 1025

@@ -20,6 +20,7 @@ from .import_conflicts import (
 from .read_batching import batch_read_items
 from .register_allocator import first_free_register_range, register_value_width
 from .scada_write import WRITE_MAPPING_START, create_scada_write_target_from_definition
+from .write_batching import batch_write_items
 
 
 @dataclass(slots=True)
@@ -104,6 +105,7 @@ def build_symbol_import_plan(
     source_address_offset: int = 0,
     mapping_start: int = 1025,
     conflict_policy: str = "skip",
+    write_only: bool = False,
 ) -> list[SymbolPlannedItem]:
     """Build a non-destructive plan using symbol addresses as physical device registers."""
     requests = _target_requests(project, device_name)
@@ -123,18 +125,22 @@ def build_symbol_import_plan(
         if not row.name:
             result.append(SymbolPlannedItem(row, None, None, "Skip: empty node name"))
             continue
-        if row.name in planned_requests:
+        conflict_name = f"{row.name}_w" if write_only else row.name
+        if write_only and register_type not in {"coil", "holding_register"}:
+            result.append(SymbolPlannedItem(row, None, None, "Skip: symbol type is read-only"))
+            continue
+        if conflict_name in planned_requests:
             result.append(SymbolPlannedItem(row, None, None, f"Skip: duplicate request name {row.name}"))
             continue
-        if row.name in planned_mappings:
+        if conflict_name in planned_mappings:
             result.append(SymbolPlannedItem(row, None, None, f"Skip: duplicate mapping name {row.name}"))
             continue
-        existing_conflict = row.name in existing_request_names or row.name in existing_mapping_names
+        existing_conflict = conflict_name in existing_request_names or conflict_name in existing_mapping_names
         replace_existing = existing_conflict and conflict_policy == REPLACE_MATCHING
         if existing_conflict and not replace_existing:
             result.append(SymbolPlannedItem(row, None, None, f"Skip: existing request or mapping {row.name}"))
             continue
-        if replace_existing and not can_replace_name(project, device_name=device_name, name=row.name):
+        if replace_existing and not can_replace_name(project, device_name=device_name, name=conflict_name):
             result.append(SymbolPlannedItem(row, None, None, f"Skip: mapping name {row.name} belongs to another device"))
             continue
 
@@ -162,8 +168,8 @@ def build_symbol_import_plan(
             count=1,
         )
         shadow.mappings.append(mapping)
-        planned_requests.add(row.name)
-        planned_mappings.add(row.name)
+        planned_requests.add(conflict_name)
+        planned_mappings.add(conflict_name)
         status = "Ready (replace existing)" if replace_existing else "Ready"
         result.append(SymbolPlannedItem(row, request, mapping, status, replace_existing))
     return result
@@ -194,6 +200,8 @@ def apply_symbol_import_plan(
     batch_reads: bool = False,
     create_write_companions: bool = False,
     write_mapping_start: int = WRITE_MAPPING_START,
+    write_only: bool = False,
+    batch_writes: bool = False,
 ) -> int:
     """Apply selected ready rows to an existing RTU or TCP target device."""
     requests = _target_requests(project, device_name)
@@ -202,17 +210,38 @@ def apply_symbol_import_plan(
         project,
         device_name=device_name,
         names={item.source.name for item in ready if item.replace_existing},
+        write_only=write_only,
     )
-    packed = repack_symbol_import_items(project, ready, mapping_start=mapping_start)
+    packed = ready if write_only else repack_symbol_import_items(project, ready, mapping_start=mapping_start)
     semantic_items = list(packed)
-    if batch_reads:
+    if write_only:
+        pass
+    elif batch_reads:
         block_requests, block_mappings, packed = batch_read_items(requests, packed)
         requests.extend(block_requests)
         project.mappings.extend(block_mappings)
     else:
         requests.extend(item.request for item in packed if item.request is not None)
-    project.mappings.extend(item.mapping for item in packed if item.mapping is not None)
-    if create_write_companions:
+    if not write_only:
+        project.mappings.extend(item.mapping for item in packed if item.mapping is not None)
+    if create_write_companions or write_only:
+        writable_items = [
+            item for item in semantic_items
+            if item.request is not None
+            and item.mapping is not None
+            and item.mapping.register_type in {"coil", "holding_register"}
+        ]
+        if batch_writes:
+            write_requests, write_blocks, write_aliases = batch_write_items(
+                project,
+                device_name=device_name,
+                items=writable_items,
+                mapping_start=write_mapping_start,
+            )
+            requests.extend(write_requests)
+            project.mappings.extend(write_blocks)
+            project.mappings.extend(write_aliases)
+            return 0 if write_only else len(packed)
         final_mapping_by_name = {
             item.mapping.name: item.mapping for item in packed if item.mapping is not None
         }
@@ -228,4 +257,4 @@ def apply_symbol_import_plan(
                 feedback_mapping=final_mapping_by_name[item.mapping.name],
                 write_block_start=write_mapping_start,
             )
-    return len(packed)
+    return 0 if write_only else len(packed)

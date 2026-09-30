@@ -116,12 +116,12 @@ def test_symbol_import_can_use_same_physical_batch_model_as_register_tables():
     ) == 3
 
     assert [(r.name, r.register, r.count, r.data_type) for r in project.tcp_clients[0].requests] == [
-        ("Batch_FC03_10_21", 10, 12, "uint16")
+        ("Batch_HR_10_21", 10, 12, "uint16")
     ]
     deployed = [m for m in project.mappings if m.deploy]
     aliases = {m.name: m for m in project.mappings if not m.deploy}
     assert [(m.name, m.register, m.count, m.export_symbol) for m in deployed] == [
-        ("Batch_FC03_10_21", 1025, 12, False)
+        ("Batch_HR_10_21", 1025, 12, False)
     ]
     assert (aliases["Temperature"].register, aliases["Temperature"].source_offset) == (1025, 0)
     assert (aliases["Mode"].register, aliases["Mode"].source_offset) == (1027, 2)
@@ -188,8 +188,8 @@ def test_replace_symbol_inside_shared_batch_preserves_other_alias_and_replaces_w
     )
 
     requests = project.tcp_clients[0].requests
-    assert any(request.name == "Batch_FC03_10_11" for request in requests)
-    assert any(mapping.name == "B" and mapping.request == "Batch_FC03_10_11" for mapping in project.mappings)
+    assert any(request.name == "Batch_HR_10_11" for request in requests)
+    assert any(mapping.name == "B" and mapping.request == "Batch_HR_10_11" for mapping in project.mappings)
     assert sum(mapping.name == "A" for mapping in project.mappings) == 1
     assert sum(mapping.name == "A_w" for mapping in project.mappings) == 1
     assert sum(request.name == "A_w" for request in requests) == 1

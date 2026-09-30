@@ -17,6 +17,7 @@ Input Register symbol encodings remain unverified.
 from __future__ import annotations
 
 from .models import Project, ServerMapping
+from .read_batching import is_batch_name
 
 
 _INTEGER_REGISTER_TYPES = {"int8", "uint8", "int16", "uint16"}
@@ -33,7 +34,7 @@ def is_physical_batch_mapping(mapping: ServerMapping) -> bool:
     the editor project because those aliases are intentionally not deployed.
     Exporting the remaining physical block as one symbol would be misleading.
     """
-    batch_name = mapping.name.startswith("Batch_FC") or mapping.request.startswith("Batch_FC")
+    batch_name = is_batch_name(mapping.name) or is_batch_name(mapping.request)
     raw_multi_value_block = mapping.count > 1 and mapping.symbol_data_type is None
     return mapping.deploy and (batch_name or raw_multi_value_block)
 

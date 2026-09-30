@@ -56,26 +56,39 @@ class SymbolPreviewWindow(tk.Toplevel):
         ).grid(row=2, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
 
         self.write_companions_var = tk.BooleanVar(value=False)
+        self.write_only_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            options,
+            text="Write requests only (do not create reads or read mappings)",
+            variable=self.write_only_var,
+        ).grid(row=3, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
         ttk.Checkbutton(
             options,
             text="Create SCADA write companions for selected DA/HR/HRR/HRD symbols",
             variable=self.write_companions_var,
-        ).grid(row=3, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=4, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
+
+        self.batch_writes_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            options,
+            text="Batch write requests (FC15/FC16; test on target hardware first)",
+            variable=self.batch_writes_var,
+        ).grid(row=5, column=0, columnspan=7, padx=6, pady=(0, 6), sticky="w")
 
         self.read_mode_var = tk.StringVar(value="batched")
-        ttk.Label(options, text="Read import mode:").grid(row=4, column=0, padx=6, pady=(0, 6), sticky="w")
+        ttk.Label(options, text="Read import mode:").grid(row=6, column=0, padx=6, pady=(0, 6), sticky="w")
         ttk.Radiobutton(
             options,
             text="Batched (recommended; FC03/FC04 up to 100 registers, FC01/FC02 up to 1000 bits)",
             variable=self.read_mode_var,
             value="batched",
-        ).grid(row=4, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=6, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
         ttk.Radiobutton(
             options,
             text="Register by register",
             variable=self.read_mode_var,
             value="individual",
-        ).grid(row=4, column=5, columnspan=2, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=6, column=5, columnspan=2, padx=6, pady=(0, 6), sticky="w")
 
         filters = ttk.Frame(self)
         filters.pack(fill="x", padx=10, pady=(0, 6))
@@ -167,6 +180,7 @@ class SymbolPreviewWindow(tk.Toplevel):
                 self.parent.project, self.preview.rows, device_name=self.device_var.get(),
                 source_address_offset=offset, mapping_start=start,
                 conflict_policy="replace" if self.conflict_var.get().startswith("Replace") else "skip",
+                write_only=self.write_only_var.get(),
             )
         except Exception as exc:
             messagebox.showerror("Symbol import", str(exc), parent=self); return
@@ -178,14 +192,20 @@ class SymbolPreviewWindow(tk.Toplevel):
         if not items:
             messagebox.showinfo("Symbol import", "Select at least one ready row.", parent=self); return
         batch_reads = self.read_mode_var.get() == "batched"
+        write_only = self.write_only_var.get()
+        create_writes = self.write_companions_var.get() or write_only
         mode = "bounded batch requests" if batch_reads else "one request per symbol"
         writeable = sum(
             item.mapping is not None and item.mapping.register_type in {"coil", "holding_register"}
             for item in items
         )
         write_note = ""
-        if self.write_companions_var.get():
+        if create_writes:
             write_note = f"\nCreate {writeable} independent SCADA write companion(s) for writable symbols."
+        if write_only:
+            write_note = f"\nCreate {writeable} write request(s) only; no read requests will be added."
+        if create_writes and self.batch_writes_var.get():
+            write_note += "\nGroup writes into FC15/FC16 blocks."
         if not messagebox.askyesno(
             "Symbol import",
             f"Import {len(items)} selected symbols into {self.device_var.get()} using {mode}?\n\n"
@@ -199,7 +219,9 @@ class SymbolPreviewWindow(tk.Toplevel):
             count = apply_symbol_import_plan(
                 self.parent.project, items, device_name=self.device_var.get(), mapping_start=int(self.start_var.get()),
                 batch_reads=batch_reads,
-                create_write_companions=self.write_companions_var.get(),
+                create_write_companions=create_writes,
+                write_only=write_only,
+                batch_writes=create_writes and self.batch_writes_var.get(),
             )
             after_writes = sum(request.function.is_write for source in (*self.parent.project.devices, *self.parent.project.tcp_clients) for request in source.requests)
         except Exception as exc:

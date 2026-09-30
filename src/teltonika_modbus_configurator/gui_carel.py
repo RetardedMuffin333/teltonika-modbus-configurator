@@ -285,26 +285,39 @@ class CarelPreviewWindow(tk.Toplevel):
         ).grid(row=1, column=1, columnspan=2, padx=6, pady=(0, 6), sticky="w")
 
         self.write_companions_var = tk.BooleanVar(value=False)
+        self.write_only_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            options,
+            text="Write requests only (do not create reads or read mappings)",
+            variable=self.write_only_var,
+        ).grid(row=2, column=0, columnspan=6, padx=6, pady=(0, 6), sticky="w")
         ttk.Checkbutton(
             options,
             text="Create SCADA write companions for selected ReadWrite Coil/HoldingRegister values",
             variable=self.write_companions_var,
-        ).grid(row=2, column=0, columnspan=6, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=3, column=0, columnspan=6, padx=6, pady=(0, 6), sticky="w")
+
+        self.batch_writes_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            options,
+            text="Batch write requests (FC15/FC16; test on target hardware first)",
+            variable=self.batch_writes_var,
+        ).grid(row=4, column=0, columnspan=6, padx=6, pady=(0, 6), sticky="w")
 
         self.read_mode_var = tk.StringVar(value="batched")
-        ttk.Label(options, text="Read import mode:").grid(row=3, column=0, padx=6, pady=(0, 6), sticky="w")
+        ttk.Label(options, text="Read import mode:").grid(row=5, column=0, padx=6, pady=(0, 6), sticky="w")
         ttk.Radiobutton(
             options,
             text="Batched (recommended; FC03/FC04 up to 100 registers, FC01/FC02 up to 1000 bits)",
             variable=self.read_mode_var,
             value="batched",
-        ).grid(row=3, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=5, column=1, columnspan=4, padx=6, pady=(0, 6), sticky="w")
         ttk.Radiobutton(
             options,
             text="Register by register",
             variable=self.read_mode_var,
             value="individual",
-        ).grid(row=3, column=5, padx=6, pady=(0, 6), sticky="w")
+        ).grid(row=5, column=5, padx=6, pady=(0, 6), sticky="w")
 
         filters = ttk.Frame(self); filters.pack(fill="x", padx=10, pady=(0, 5))
         ttk.Label(filters, text="Modbus type:").pack(side="left")
@@ -383,6 +396,7 @@ class CarelPreviewWindow(tk.Toplevel):
                 self.parent.project, self.preview.rows, device_name=device_name,
                 add_one_to_index=self.add_one_var.get(), mapping_start=int(self.start_var.get()),
                 conflict_policy="replace" if self.conflict_var.get().startswith("Replace") else "skip",
+                write_only=self.write_only_var.get(),
             )
         except Exception as exc:
             messagebox.showerror("Carel import", str(exc), parent=self); return
@@ -399,7 +413,13 @@ class CarelPreviewWindow(tk.Toplevel):
         if not selected_items:
             messagebox.showwarning("Carel import", "Select at least one ready row to import.", parent=self); return
         device_name = self.device_targets[self.device_var.get()]
-        extra = "\nSCADA write companions will also be created for selected ReadWrite Coil/HoldingRegister rows." if self.write_companions_var.get() else ""
+        write_only = self.write_only_var.get()
+        create_writes = self.write_companions_var.get() or write_only
+        extra = "\nOnly write requests/mappings will be created; no reads will be duplicated." if write_only else ""
+        if self.write_companions_var.get() and not write_only:
+            extra += "\nSCADA write companions will also be created for selected ReadWrite Coil/HoldingRegister rows."
+        if create_writes and self.batch_writes_var.get():
+            extra += "\nWrites will be grouped into FC15/FC16 blocks."
         batch_reads = self.read_mode_var.get() == "batched"
         if batch_reads:
             extra += "\nSelected reads will share bounded block requests using RutOS tag offsets."
@@ -413,8 +433,9 @@ class CarelPreviewWindow(tk.Toplevel):
         try:
             read_count, write_count = apply_carel_import_plan(
                 self.parent.project, selected_items, device_name=device_name,
-                mapping_start=int(self.start_var.get()), create_write_companions=self.write_companions_var.get(),
-                batch_reads=batch_reads,
+                mapping_start=int(self.start_var.get()), create_write_companions=create_writes,
+                batch_reads=batch_reads, write_only=write_only,
+                batch_writes=create_writes and self.batch_writes_var.get(),
             )
         except Exception as exc:
             messagebox.showerror("Carel import", str(exc), parent=self); return

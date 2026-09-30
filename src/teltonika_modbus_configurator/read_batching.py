@@ -16,6 +16,18 @@ BATCH_LIMIT = {
     FunctionCode.READ_DISCRETE_INPUTS: 1000,
 }
 
+READ_AREA_CODE = {
+    FunctionCode.READ_COILS: "DA",
+    FunctionCode.READ_DISCRETE_INPUTS: "DI",
+    FunctionCode.READ_HOLDING_REGISTERS: "HR",
+    FunctionCode.READ_INPUT_REGISTERS: "IR",
+}
+
+
+def is_batch_name(name: str) -> bool:
+    """Recognize current area-based and legacy FC-based physical batch names."""
+    return name.startswith(("Batch_DA_", "Batch_DI_", "Batch_HR_", "Batch_IR_", "Batch_FC"))
+
 
 def _unique_request_name(existing: Iterable[Request], base: str, reserved: set[str]) -> str:
     used = {request.name for request in existing} | reserved
@@ -80,7 +92,11 @@ def batch_read_items(
             )
             raw_type = "bool" if register_type in {"coil", "discrete_input"} else "uint16"
             raw_order = "none" if raw_type == "bool" else "high_byte_first"
-            name = _unique_request_name(existing_requests, f"Batch_FC{int(function):02d}_{start}_{end}", reserved)
+            name = _unique_request_name(
+                existing_requests,
+                f"Batch_{READ_AREA_CODE[function]}_{start}_{end}",
+                reserved,
+            )
             request = Request(
                 name=name,
                 function=function,
