@@ -22,7 +22,8 @@ class ValidationResultsWindow(tk.Toplevel):
         }
         ttk.Label(
             self,
-            text=(f"Errors: {counts['error']}    Warnings: {counts['warning']}    "
+            text=("PASS — no issues found" if not messages else
+                  f"Errors: {counts['error']}    Warnings: {counts['warning']}    "
                   f"Information: {counts['info']}"),
         ).pack(fill="x", padx=10, pady=(10, 6))
 
@@ -36,6 +37,8 @@ class ValidationResultsWindow(tk.Toplevel):
             tree.column(key, width=width, anchor="w")
         frame.pack(fill="both", expand=True, padx=10, pady=(0, 8))
 
+        if not messages:
+            tree.insert("", "end", values=("PASS", "Project", "No validation issues found."), tags=("pass",))
         for message in messages:
             object_name, separator, problem = message.message.partition(": ")
             if not separator:
@@ -47,6 +50,7 @@ class ValidationResultsWindow(tk.Toplevel):
         tree.tag_configure("error", foreground="#a32929")
         tree.tag_configure("warning", foreground="#9a6500")
         tree.tag_configure("info", foreground="#245b8a")
+        tree.tag_configure("pass", foreground="#176b2c")
 
         footer = ttk.Frame(self)
         footer.pack(fill="x", padx=10, pady=(0, 10))
