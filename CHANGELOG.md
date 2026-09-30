@@ -2,7 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 0.8.0.dev0
+## [Unreleased]
+
+## [0.8.0] - 2026-09-30
+
+Eighth release baseline, focused on guided project creation, safe read/write batching, pre-import hardware verification, polished operator workflows, and colleague-ready commissioning documentation.
 
 ### Added
 
