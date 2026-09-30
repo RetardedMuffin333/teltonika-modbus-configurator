@@ -90,3 +90,65 @@ def test_float32_mapping_reserves_two_modbus_registers():
         data_type="float32", count=1,
     )
     assert mapping_width(mapping) == 2
+
+
+def test_bulk_template_preserves_batch_aliases_without_duplicate_live_ranges():
+    project = Project(
+        connections=[SerialConnection(name="RS485")],
+        devices=[Device(
+            "Template", 1, "RS485",
+            requests=[Request("Batch_HR_10_19", FunctionCode.READ_HOLDING_REGISTERS, 10, count=10)],
+        )],
+        mappings=[
+            ServerMapping(
+                "Batch_HR_10_19", "Template", "Batch_HR_10_19", 1025,
+                "holding_register", data_type="uint16", count=10, export_symbol=False,
+            ),
+            ServerMapping(
+                "Room_Temperature", "Template", "Batch_HR_10_19", 1027,
+                "holding_register", data_type="uint16", count=2, source_offset=2,
+                symbol_data_type="float32", deploy=False,
+            ),
+            ServerMapping(
+                "Mode", "Template", "Batch_HR_10_19", 1030,
+                "holding_register", data_type="uint16", source_offset=5,
+                symbol_data_type="uint16", deploy=False,
+            ),
+        ],
+    )
+    layout = allocate_template_mapping_layout(project, project.mappings)
+    specs = [
+        BulkMappingSpec(
+            name_pattern=f"{{device}}_{mapping.name}", request=mapping.request,
+            register_type=mapping.register_type, start_register=layout[mapping.name][0],
+            step=layout[mapping.name][1], data_type=mapping.data_type, count=mapping.count,
+            source_offset=mapping.source_offset, symbol_data_type=mapping.symbol_data_type,
+            deploy=mapping.deploy, export_symbol=mapping.export_symbol,
+        )
+        for mapping in project.mappings
+    ]
+    spec = BulkSpec(
+        connection="RS485", name_pattern="Clone{index}", count=2,
+        start_index=2, slave_start=2,
+        requests=[BulkRequestSpec("Batch_HR_10_19", FunctionCode.READ_HOLDING_REGISTERS, 10, count=10)],
+        mappings=specs,
+    )
+
+    assert validate_bulk_spec(project, spec) == []
+    result = generate_bulk(project, spec)
+    assert len([mapping for mapping in result.mappings if mapping.deploy]) == 2
+    assert len([mapping for mapping in result.mappings if not mapping.deploy]) == 4
+    aliases = [mapping for mapping in result.mappings if not mapping.deploy]
+    assert {mapping.source_offset for mapping in aliases} == {2, 5}
+    assert {mapping.symbol_data_type for mapping in aliases} == {"float32", "uint16"}
+
+
+def test_bulk_template_alias_name_pattern_uses_symbol_name_not_shared_batch_request():
+    from teltonika_modbus_configurator.gui_bulk import BulkGeneratorWindow
+
+    assert BulkGeneratorWindow._suggest_mapping_pattern(
+        "Room_Temperature", "Template"
+    ) == "{device}_Room_Temperature"
+    assert BulkGeneratorWindow._suggest_mapping_pattern(
+        "Template_Batch_HR_10_19", "Template"
+    ) == "{device}_Batch_HR_10_19"
