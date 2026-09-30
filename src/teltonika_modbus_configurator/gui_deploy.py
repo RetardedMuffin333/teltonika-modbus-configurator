@@ -38,7 +38,7 @@ def format_elapsed_time(seconds: float) -> str:
 
 
 class DiffConfirmDialog(tk.Toplevel):
-    """Modal diff viewer that requires typing APPLY before a write."""
+    """Modal diff viewer with one explicit apply confirmation."""
 
     def __init__(self, parent, diff: str):
         super().__init__(parent)
@@ -69,21 +69,16 @@ class DiffConfirmDialog(tk.Toplevel):
 
         confirm = ttk.Frame(self)
         confirm.pack(fill="x", padx=10, pady=10)
-        ttk.Label(confirm, text="Type APPLY to enable the write:").pack(side="left")
-        self.confirm_var = tk.StringVar()
-        entry = ttk.Entry(confirm, textvariable=self.confirm_var, width=14)
-        entry.pack(side="left", padx=8)
-        self.apply_button = ttk.Button(confirm, text="Apply to TRB", command=self._apply, state="disabled")
+        ttk.Label(
+            confirm,
+            text="Confirm only after reviewing the complete diff. A recovery snapshot is created before writing.",
+        ).pack(side="left")
+        self.apply_button = ttk.Button(confirm, text="Confirm and apply to TRB", command=self._apply)
         self.apply_button.pack(side="right", padx=4)
         ttk.Button(confirm, text="Cancel", command=self.destroy).pack(side="right", padx=4)
-        self.confirm_var.trace_add("write", self._toggle)
-        entry.focus_set()
+        self.apply_button.focus_set()
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         parent.wait_window(self)
-
-    def _toggle(self, *_args):
-        state = "normal" if self.confirm_var.get().strip() == "APPLY" else "disabled"
-        self.apply_button.configure(state=state)
 
     def _apply(self):
         self.result = True
