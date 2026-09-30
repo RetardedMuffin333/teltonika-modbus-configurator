@@ -166,7 +166,7 @@ def test_batched_carel_reads_share_requests_and_use_tag_offsets():
     assert (mappings["Temperature_A"].data_type, mappings["Temperature_A"].count) == ("uint16", 2)
     assert mappings["Temperature_A"].symbol_data_type == "float32"
     assert mappings["Temperature_A"].deploy is False
-    block = mappings["Batch_FC03_10_20"]
+    block = mappings["Batch_HR_10_20"]
     assert (block.register, block.count, block.deploy, block.export_symbol) == (1025, 11, True, False)
 
     generated = generate_uci(project)
@@ -179,7 +179,7 @@ def test_batched_carel_reads_share_requests_and_use_tag_offsets():
     symbols = export_atvise_symbols(project)
     assert "sym-Temperature_A=HRR1025," in symbols
     assert "sym-Temperature_B=HRR1027," in symbols
-    assert "Batch_FC03" not in symbols
+    assert "Batch_HR_" not in symbols
 
 
 def test_batched_carel_import_can_also_create_write_companion():
@@ -238,12 +238,12 @@ def test_carel_import_supports_rtu_target_with_batching_writes_and_uci():
 
     assert (read_count, write_count) == (2, 1)
     requests = {request.name: request for request in project.devices[0].requests}
-    assert requests["Batch_FC03_10_20"].count == 11
+    assert requests["Batch_HR_10_20"].count == 11
     assert requests["Setpoint_w"].function == FunctionCode.WRITE_SINGLE_HOLDING_REGISTER
     assert all(mapping.device == "Carel_RTU" for mapping in project.mappings)
     generated = generate_uci(project)
     assert "option server_id '7'" in generated.modbus_client
-    assert "option tag_name 'Batch_FC03_10_20'" in generated.modbus_server
+    assert "option tag_name 'Batch_HR_10_20'" in generated.modbus_server
     assert "option tag_name 'Setpoint_w'" in generated.modbus_server
 
 
@@ -311,3 +311,51 @@ def test_carel_replace_conflict_updates_value_and_write_companion_without_duplic
     assert next(request for request in requests if request.name == "Setpoint_w").function == FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
     assert sum(mapping.name == "Setpoint" for mapping in project.mappings) == 1
     assert sum(mapping.name == "Setpoint_w" for mapping in project.mappings) == 1
+
+
+def test_write_only_after_read_import_does_not_duplicate_reads():
+    project = _project()
+    rows = [
+        CarelImportRow("Documentation", 2, "Mode", "10", "HoldingRegister", "1", "UInt", "ReadWrite"),
+        CarelImportRow("Documentation", 3, "Setpoint", "20", "HoldingRegister", "2", "Real", "ReadWrite"),
+    ]
+    read_plan = build_carel_import_plan(project, rows, device_name="Carel", add_one_to_index=False)
+    apply_carel_import_plan(project, read_plan, device_name="Carel", batch_reads=True)
+    reads_before = [request.name for request in project.tcp_clients[0].requests if request.function.is_read]
+
+    write_plan = build_carel_import_plan(
+        project, rows, device_name="Carel", add_one_to_index=False, write_only=True,
+    )
+    assert all(item.request is not None for item in write_plan)
+    assert apply_carel_import_plan(
+        project, write_plan, device_name="Carel", write_only=True,
+    ) == (0, 2)
+
+    assert [request.name for request in project.tcp_clients[0].requests if request.function.is_read] == reads_before
+    assert {request.name for request in project.tcp_clients[0].requests if request.function.is_write} == {"Mode_w", "Setpoint_w"}
+
+
+def test_batched_write_import_creates_fc15_fc16_blocks_and_symbol_aliases():
+    project = _project()
+    rows = [
+        CarelImportRow("Documentation", 2, "Enable", "1", "Coil", "1", "Bool", "ReadWrite"),
+        CarelImportRow("Documentation", 3, "Mode", "10", "HoldingRegister", "1", "UInt", "ReadWrite"),
+        CarelImportRow("Documentation", 4, "Setpoint", "12", "HoldingRegister", "2", "Real", "ReadWrite"),
+    ]
+    plan = build_carel_import_plan(
+        project, rows, device_name="Carel", add_one_to_index=False, write_only=True,
+    )
+    assert apply_carel_import_plan(
+        project, plan, device_name="Carel", write_only=True, batch_writes=True,
+    ) == (0, 3)
+
+    requests = {request.name: request for request in project.tcp_clients[0].requests}
+    assert requests["Batch_DA_WRITE_1_1"].function == FunctionCode.WRITE_MULTIPLE_COILS
+    assert requests["Batch_HR_WRITE_10_13"].function == FunctionCode.WRITE_MULTIPLE_HOLDING_REGISTERS
+    assert requests["Batch_HR_WRITE_10_13"].values == "0 0 0 0"
+    aliases = {mapping.name: mapping for mapping in project.mappings if not mapping.deploy}
+    assert set(aliases) == {"Enable_w", "Mode_w", "Setpoint_w"}
+    assert aliases["Setpoint_w"].source_offset == 2
+    assert aliases["Setpoint_w"].count == 2
+    assert aliases["Setpoint_w"].symbol_data_type == "float32"
+    assert not [message for message in validate_project(project) if message.level == "error"]
