@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - First Project Wizard for guided RTU-only, TCP-only, and mixed gateway setup.
 - Wizard setup for the upstream TCP Server and the first RTU/TCP source devices.
 - Optional hand-off from the wizard to Register Table or atvise Symbol import.
-- Live Modbus write testing for configured and ad-hoc FC05/FC06/FC15/FC16 commands with explicit `WRITE` confirmation.
+- Live Modbus write testing for configured and manual FC05/FC06/FC15/FC16 commands with an explicit summary and confirmation button.
 - RutOS-compatible dropdowns for serial device, baudrate, data bits, parity, and stop bits.
 - Editable common-value dropdown suggestions for TCP port, Unit ID, polling period, and timeout.
 - atvise `.Symbol` export grouped into editable per-source-device folders, defaulting to the source device name.
@@ -18,6 +18,18 @@ All notable changes to this project will be documented in this file.
 - Nested TCP Server Mapping expanders showing every logical register alias and its exact atvise `.Symbol` line inside each physical batch.
 - Manual and automatic conversion of existing individual FC01-FC04 requests into optimized physical batches while preserving original names as atvise symbol aliases.
 - Optional SCADA write-companion creation in atvise Symbol imports, including alongside batched reads; Carel batched imports now support the same combination.
+- Pre-import scanning of proposed physical read batches through the RutOS API, including response time and Modbus exception reporting.
+- Persistent last-used gateway IP/hostname shared by live import, diagnostics, preview, deployment, and rollback without storing credentials.
+
+### Changed
+
+- Automatic read and write batching stops at source-address gaps to avoid invalid contiguous requests and unintended gap writes.
+- Batch expanders identify physical batches and their individual symbol contents more clearly.
+- Live tester modes use Configured Read, Manual Read, Write Request, and Scan Device terminology.
+- atvise export now provides one predictable action that exports all project mappings and symbol aliases.
+- Live connection prompts are foreground-modal and focus the input field.
+- Deployment and live writes use review plus a single confirmation button instead of requiring typed confirmation words.
+- Bulk generation preserves physical batch mappings and symbol-only aliases without deploying duplicate mappings.
 
 ## [0.7.0] - 2026-09-21
 
