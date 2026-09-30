@@ -47,23 +47,25 @@ class UsableCarelProjectEditor(CarelProjectEditor):
         super()._build_devices_tab()
         self.requests_tree.configure(selectmode="extended")
         self.requests_tree.bind("<Double-1>", self._double_click_rtu_request)
-        action_bar = ttk.Frame(self.requests_tree.master)
-        action_bar.pack(fill="x", pady=(4, 0))
-        ttk.Button(action_bar, text="Create TCP mapping(s) from selected request(s)", command=self.create_rtu_tcp_mappings).pack(side="left", padx=3)
+        action_bar = self.rtu_request_actions
+        ttk.Separator(action_bar, orient="vertical").pack(side="left", fill="y", padx=7)
+        ttk.Button(action_bar, text="Create mapping(s)", command=self.create_rtu_tcp_mappings).pack(side="left", padx=3)
         ttk.Button(action_bar, text="Create write request(s)", command=self.create_rtu_scada_write_target).pack(side="left", padx=3)
-        ttk.Button(action_bar, text="Batch selected requests", command=self.batch_selected_rtu_reads).pack(side="left", padx=(16, 3))
-        ttk.Button(action_bar, text="Auto-batch device requests", command=self.auto_batch_rtu_reads).pack(side="left", padx=3)
+        ttk.Separator(action_bar, orient="vertical").pack(side="left", fill="y", padx=7)
+        ttk.Button(action_bar, text="Batch selected", command=self.batch_selected_rtu_reads).pack(side="left", padx=3)
+        ttk.Button(action_bar, text="Auto-batch all", command=self.auto_batch_rtu_reads).pack(side="left", padx=3)
 
     def _build_tcp_clients_tab(self):
         super()._build_tcp_clients_tab()
         self.tcp_client_requests_tree.configure(selectmode="extended")
         self.tcp_client_requests_tree.bind("<Double-1>", self._double_click_tcp_request)
-        action_bar = ttk.Frame(self.tcp_client_requests_tree.master)
-        action_bar.pack(fill="x", pady=(4, 0))
-        ttk.Button(action_bar, text="Create TCP mapping(s) from selected request(s)", command=self.create_tcp_client_tcp_mappings).pack(side="left", padx=3)
+        action_bar = self.tcp_request_actions
+        ttk.Separator(action_bar, orient="vertical").pack(side="left", fill="y", padx=7)
+        ttk.Button(action_bar, text="Create mapping(s)", command=self.create_tcp_client_tcp_mappings).pack(side="left", padx=3)
         ttk.Button(action_bar, text="Create write request(s)", command=self.create_tcp_scada_write_target).pack(side="left", padx=3)
-        ttk.Button(action_bar, text="Batch selected requests", command=self.batch_selected_tcp_reads).pack(side="left", padx=(16, 3))
-        ttk.Button(action_bar, text="Auto-batch device requests", command=self.auto_batch_tcp_reads).pack(side="left", padx=3)
+        ttk.Separator(action_bar, orient="vertical").pack(side="left", fill="y", padx=7)
+        ttk.Button(action_bar, text="Batch selected", command=self.batch_selected_tcp_reads).pack(side="left", padx=3)
+        ttk.Button(action_bar, text="Auto-batch all", command=self.auto_batch_tcp_reads).pack(side="left", padx=3)
 
     def _build_mappings_tab(self):
         super()._build_mappings_tab()
