@@ -29,8 +29,8 @@ class V08ProjectEditor(V06ProjectEditor):
     @staticmethod
     def _configure_grouped_request_tree(tree):
         tree.configure(show="tree headings")
-        tree.heading("#0", text="")
-        tree.column("#0", width=28, minwidth=28, stretch=False)
+        tree.heading("#0", text="Contents")
+        tree.column("#0", width=80, minwidth=80, stretch=False, anchor="w")
         tree.tag_configure("symbol_alias", foreground="#245b8a")
         tree.tag_configure("read_group", foreground="#245b8a")
         tree.tag_configure("write_group", foreground="#7a3f88")
@@ -57,21 +57,23 @@ class V08ProjectEditor(V06ProjectEditor):
             for index, request in group_requests:
                 count_or_values = request.values if request.function.is_write else request.count
                 dtype = request.raw_data_type or request.data_type
-                tree.insert(
-                    group_iid, "end", iid=str(index),
-                    values=(request.name, int(request.function), request.register, count_or_values,
-                            dtype, request.byte_order, enabled_mark(request.enabled)),
-                    tags=("write_request",) if request.function.is_write else (),
-                )
                 aliases = [
                     mapping for mapping in self.project.mappings
                     if not mapping.deploy and mapping.device == device_name and mapping.request == request.name
                 ]
+                tree.insert(
+                    group_iid, "end", iid=str(index),
+                    text="Batch" if aliases else "",
+                    values=(request.name, int(request.function), request.register, count_or_values,
+                            dtype, request.byte_order, enabled_mark(request.enabled)),
+                    tags=("write_request",) if request.function.is_write else (),
+                )
                 for alias_index, alias in enumerate(aliases):
                     source_register = request.register + alias.source_offset
                     tree.insert(
                         str(index), "end", iid=f"request-alias::{device_name}::{index}::{alias_index}",
-                        values=(f"↳ {alias.name}", "alias",
+                        text="Symbol",
+                        values=(alias.name, "alias",
                                 source_register, alias.count, alias.symbol_data_type or alias.data_type,
                                 "", enabled_mark(alias.enabled)), tags=("symbol_alias",),
                     )
