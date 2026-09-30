@@ -248,11 +248,10 @@ Use:
 
 ```text
 Export
-├── atvise Connect Symbol file (all mappings)...
-└── atvise Connect Symbol file (enabled only)...
+└── atvise Connect Symbol file...
 ```
 
-The export contains individual logical symbols, including aliases inside batches.
+The export contains all individual logical symbols, including disabled mappings and aliases inside batches. Disabled-only filtering is intentionally left to project editing so there is one predictable export path.
 
 Symbols are grouped by the editable atvise group of their source device. Read symbols use the base group and write symbols use the `_w` suffix:
 
