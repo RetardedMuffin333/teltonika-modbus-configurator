@@ -14,8 +14,10 @@ from .deploy import (
     apply_generated,
     new_snapshot_name,
     read_remote_config,
+    render_gateway_preflight,
     render_diff,
     rollback_snapshot,
+    run_gateway_preflight,
     save_local_backup,
 )
 from .gui import ProjectEditor, TextWindow
@@ -94,6 +96,8 @@ class DeploymentEditor(ProjectEditor):
         super()._build_menu()
         menu = self.nametowidget(self.cget("menu"))
         deploy = tk.Menu(menu, tearoff=False)
+        deploy.add_command(label="Gateway preflight...", command=self.gateway_preflight)
+        deploy.add_separator()
         deploy.add_command(label="Preview live diff...", command=self.remote_preview)
         deploy.add_command(label="Apply to live TRB...", command=self.remote_apply)
         deploy.add_separator()
@@ -122,6 +126,38 @@ class DeploymentEditor(ProjectEditor):
             parent=self,
         )
         return host, user, password, trust
+
+    def gateway_preflight(self):
+        details = self._ssh_details()
+        if details is None:
+            return
+        host, user, password, trust = details
+
+        def worker(progress):
+            progress(f"Connecting to {host} for read-only preflight...")
+            with SshSession(host, username=user, password=password, trust_new_host=trust) as session:
+                progress("Checking RutOS model, packages, configuration, services, and listeners...")
+                return run_gateway_preflight(
+                    session,
+                    require_client=bool(self.project.devices or self.project.tcp_clients),
+                    require_server=self.project.tcp_server.enabled,
+                )
+
+        def success(report):
+            TextWindow(
+                self,
+                f"Gateway preflight - {host}",
+                render_gateway_preflight(report, host=host),
+            )
+            self.status.set(
+                f"Gateway preflight complete: {report.errors} error(s), {report.warnings} warning(s)"
+            )
+
+        def failure(exc):
+            self.status.set("Gateway preflight failed")
+            messagebox.showerror("Gateway preflight failed", str(exc), parent=self)
+
+        self._start_background(worker, success, failure, f"Connecting to {host}...")
 
     def _validated_generated(self):
         messages = validate_project(self.project)
