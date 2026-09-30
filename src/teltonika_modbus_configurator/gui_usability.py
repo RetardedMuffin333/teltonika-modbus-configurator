@@ -76,14 +76,18 @@ class UsableCarelProjectEditor(CarelProjectEditor):
 
     def _double_click_rtu_request(self, event):
         iid = self._clicked_row(self.requests_tree, event)
-        if iid:
+        if iid and str(iid).isdigit():
             self.requests_tree.selection_set(iid); self.edit_request()
+        elif iid:
+            self.requests_tree.item(iid, open=not self.requests_tree.item(iid, "open"))
         return "break"
 
     def _double_click_tcp_request(self, event):
         iid = self._clicked_row(self.tcp_client_requests_tree, event)
-        if iid:
+        if iid and str(iid).isdigit():
             self.tcp_client_requests_tree.selection_set(iid); self.edit_tcp_client_request()
+        elif iid:
+            self.tcp_client_requests_tree.item(iid, open=not self.tcp_client_requests_tree.item(iid, "open"))
         return "break"
 
     def _double_click_mapping(self, event):
