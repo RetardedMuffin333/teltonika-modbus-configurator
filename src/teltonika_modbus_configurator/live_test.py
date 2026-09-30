@@ -85,6 +85,39 @@ def project_test_targets(
     return targets
 
 
+def target_for_request(
+    devices: list[Device],
+    tcp_clients: list[TcpClientDevice],
+    connections: list[SerialConnection] | None,
+    *,
+    device_name: str,
+    request: Request,
+) -> LiveTestTarget:
+    """Build a live-test target for a proposed request not yet in the project."""
+    connection_by_name = {connection.name: connection for connection in (connections or [])}
+    for device in devices:
+        if device.name != device_name:
+            continue
+        connection = connection_by_name.get(device.connection)
+        return LiveTestTarget(
+            "rtu", device.name, device.slave_id, request,
+            timeout=device.timeout, config_id=device.source_id,
+            serial_type=connection.device if connection else "/dev/rs485",
+            baudrate=connection.baudrate if connection else None,
+            databits=connection.databits if connection else None,
+            parity=connection.parity if connection else None,
+            stopbits=connection.stopbits if connection else None,
+            flowcontrol="none",
+        )
+    for device in tcp_clients:
+        if device.name == device_name:
+            return LiveTestTarget(
+                "tcp", device.name, device.server_id, request,
+                device.host, device.port, device.timeout, device.source_id,
+            )
+    raise ValueError(f"Modbus device {device_name!r} does not exist.")
+
+
 def device_templates(targets: list[LiveTestTarget]) -> list[LiveTestTarget]:
     """Return one transport template per configured Modbus device."""
     templates: list[LiveTestTarget] = []
@@ -157,7 +190,7 @@ def make_adhoc_write_target(
 ) -> LiveTestTarget:
     """Build a temporary write target while inheriting the real transport."""
     if function not in WRITE_FUNCTIONS:
-        raise ValueError("Ad-hoc write testing supports FC05, FC06, FC15, and FC16 only")
+        raise ValueError("Manual write testing supports FC05, FC06, FC15, and FC16 only")
     if register < 0:
         raise ValueError("Register must be 0 or greater")
     values = " ".join(str(values).split())
@@ -176,7 +209,7 @@ def make_adhoc_write_target(
     if function == 6 and data_type in {"int32", "uint32", "float32"}:
         raise ValueError("FC06 cannot write a 32-bit value; use FC16")
     request = Request(
-        name="Ad-hoc write",
+        name="Manual write",
         function=FunctionCode(function),
         register=register,
         count=1,
