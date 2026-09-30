@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Optional SCADA write-companion creation in atvise Symbol imports, including alongside batched reads; Carel batched imports now support the same combination.
 - Pre-import scanning of proposed physical read batches through the RutOS API, including response time and Modbus exception reporting.
 - Persistent last-used gateway IP/hostname shared by live import, diagnostics, preview, deployment, and rollback without storing credentials.
+- Read-only SSH gateway preflight covering model/firmware, Modbus UCI files, services, required enable states, runtime objects, TCP listener, WebUI/API listener, and installed package information.
 
 ### Changed
 
