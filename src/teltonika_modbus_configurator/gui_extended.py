@@ -45,8 +45,7 @@ class ExtendedProjectEditor(DeploymentEditor):
         bulk_menu.add_command(label="Bulk Device Generator...", command=self.open_bulk_generator)
         menu.add_cascade(label="Bulk", menu=bulk_menu)
         export_menu = tk.Menu(menu, tearoff=False)
-        export_menu.add_command(label="atvise Connect Symbol file (all mappings)...", command=lambda: self.export_atvise_symbol_file(include_disabled=True))
-        export_menu.add_command(label="atvise Connect Symbol file (enabled only)...", command=lambda: self.export_atvise_symbol_file(include_disabled=False))
+        export_menu.add_command(label="atvise Connect Symbol file...", command=self.export_atvise_symbol_file)
         menu.add_cascade(label="Export", menu=export_menu)
 
     def _build_devices_tab(self):
@@ -345,7 +344,8 @@ class ExtendedProjectEditor(DeploymentEditor):
     def _bulk_applied(self):
         self.mark_dirty(); self.refresh_all(); self.status.set("Bulk batch added to project; validate and save before deployment")
 
-    def export_atvise_symbol_file(self, *, include_disabled: bool = True):
+    def export_atvise_symbol_file(self):
+        include_disabled = True
         try:
             text = export_atvise_symbols(self.project, include_disabled=include_disabled)
         except Exception as exc:

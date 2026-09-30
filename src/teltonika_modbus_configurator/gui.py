@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from .deploy import SshSession, read_remote_config
+from .gui_prompts import askstring_foreground
 from .loader import load_project
 from .mapping_lifecycle import (
     deployed_mappings_for_device,
@@ -17,6 +18,7 @@ from .mapping_lifecycle import (
     remove_symbol_aliases_for_requests,
 )
 from .models import Device, FunctionCode, Project, Request, SerialConnection, ServerMapping
+from .preferences import load_last_gateway_host, save_last_gateway_host
 from .uci_generator import generate_uci
 from .uci_parser import import_project
 from .validator import validate_project
@@ -347,11 +349,14 @@ class ProjectEditor(tk.Tk):
             messagebox.showerror("Open failed", str(exc))
 
     def import_live(self):
-        host = simpledialog.askstring("Import live TRB", "Host/IP:", initialvalue="10.33.22.1", parent=self)
+        host = askstring_foreground(
+            self, "Import live TRB", "Host/IP:", initialvalue=load_last_gateway_host()
+        )
         if not host:
             return
-        user = simpledialog.askstring("Import live TRB", "SSH username:", initialvalue="root", parent=self) or "root"
-        password = simpledialog.askstring("Import live TRB", "SSH password:", show="*", parent=self)
+        save_last_gateway_host(host)
+        user = askstring_foreground(self, "Import live TRB", "SSH username:", initialvalue="root") or "root"
+        password = askstring_foreground(self, "Import live TRB", "SSH password:", show="*")
         if password is None:
             return
         try:

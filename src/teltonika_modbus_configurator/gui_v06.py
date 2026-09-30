@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox
 
 from .gui_live_test import LiveModbusTesterWindow
+from .gui_prompts import askstring_foreground
 from .gui_project_report import ProjectReportWindow
 from .gui_v05 import V05ProjectEditor
 from .project_report import render_project_report
+from .preferences import load_last_gateway_host, save_last_gateway_host
 from .rutos_api import RutOSApiClient, execute_live_test
 
 
@@ -59,11 +61,14 @@ class V06ProjectEditor(V05ProjectEditor):
 
     def prompt_live_test_executor(self):
         """Prompt once for RutOS WebUI credentials and return a test callable."""
-        host = simpledialog.askstring("RutOS API", "Gateway IP / hostname:", initialvalue="192.168.2.1", parent=self)
+        host = askstring_foreground(
+            self, "RutOS API", "Gateway IP / hostname:", initialvalue=load_last_gateway_host()
+        )
         if not host:
             return None
-        username = simpledialog.askstring("RutOS API", "WebUI/API username:", initialvalue="admin", parent=self) or "admin"
-        password = simpledialog.askstring("RutOS API", "WebUI/API password:", show="*", parent=self)
+        save_last_gateway_host(host)
+        username = askstring_foreground(self, "RutOS API", "WebUI/API username:", initialvalue="admin") or "admin"
+        password = askstring_foreground(self, "RutOS API", "WebUI/API password:", show="*")
         if password is None:
             return None
         https = messagebox.askyesno(
