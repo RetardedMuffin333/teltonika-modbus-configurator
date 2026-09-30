@@ -151,6 +151,14 @@ def export_atvise_symbols(
     for mapping in mappings:
         grouped.setdefault(mapping.device, []).append(mapping)
     for device_name, device_mappings in grouped.items():
-        lines.append(f"[{_symbol_group(project, device_name)}]")
-        lines.extend(atvise_symbol_line(mapping) for mapping in device_mappings)
+        base_group = _symbol_group(project, device_name)
+        read_mappings = [mapping for mapping in device_mappings if mapping.permissions != "w"]
+        write_mappings = [mapping for mapping in device_mappings if mapping.permissions == "w"]
+
+        if read_mappings:
+            lines.append(f"[{base_group}]")
+            lines.extend(atvise_symbol_line(mapping) for mapping in read_mappings)
+        if write_mappings:
+            lines.append(f"[{base_group}_w]")
+            lines.extend(atvise_symbol_line(mapping) for mapping in write_mappings)
     return "\n".join(lines) + "\n"
