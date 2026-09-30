@@ -9,7 +9,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from .atvise_symbols import AtviseSymbolExportError, atvise_symbol_line, is_physical_batch_mapping
 from .carel_convert import apply_carel_import_plan, build_carel_import_plan
 from .carel_import import load_carel_xls
-from .gui import vars_for
+from .gui import enabled_mark, vars_for
 from .gui_scada import ScadaProjectEditor
 from .gui_widgets import tree_with_scrollbars
 from .mapping_lifecycle import remove_server_mappings
@@ -99,7 +99,7 @@ class CarelProjectEditor(ScadaProjectEditor):
                     group_iid, "end", iid=mapping_iid, text=mapping.name,
                     open=(mapping_iid in open_items),
                     values=(mapping.request, mapping.register_type, mapping.register, mapping.permissions,
-                            mapping.data_type, mapping.count, "Yes" if mapping.enabled else "No", symbol_text),
+                            mapping.data_type, mapping.count, enabled_mark(mapping.enabled), symbol_text),
                 )
                 for alias_index, alias in mapping_aliases:
                     try:
@@ -110,7 +110,7 @@ class CarelProjectEditor(ScadaProjectEditor):
                         mapping_iid, "end", iid=f"alias::{alias_index}", text=alias.name,
                         values=(alias.request, alias.register_type, alias.register, alias.permissions,
                                 alias.symbol_data_type or alias.data_type, alias.count,
-                                "Yes" if alias.enabled else "No", alias_symbol),
+                                enabled_mark(alias.enabled), alias_symbol),
                         tags=("symbol_alias",),
                     )
                 if raw_batch and not mapping_aliases:
@@ -367,7 +367,7 @@ class CarelPreviewWindow(tk.Toplevel):
                 self.tree.insert("", "end", values=(row.name, row.register, row.modbus_type, row.data_type, row.access, "", "", "", "Parsed"))
 
     def _populate_plan_rows(self):
-        self._clear_tree(); self.plan_by_iid = {}; ready = 0; skipped = 0
+        self._clear_tree(); self.plan_by_iid = {}; ready = 0; skipped = 0; conflicts = 0; replacements = 0
         for index, item in enumerate(self.plan):
             row = item.source
             if not self._row_visible(row): continue
@@ -376,9 +376,22 @@ class CarelPreviewWindow(tk.Toplevel):
                 ready += 1; server = f"{mapping.register_type}:{mapping.register}"; fc = int(request.function); rutos = request.register
             else:
                 skipped += 1; server = ""; fc = ""; rutos = ""
-            iid = self.tree.insert("", "end", values=(row.name, row.register, row.modbus_type, row.data_type, row.access, fc, rutos, server, item.status))
+            status_lower = item.status.lower()
+            if "existing" in status_lower or "belongs to another device" in status_lower:
+                conflicts += 1
+            if item.replace_existing:
+                replacements += 1
+            tag = "replace" if item.replace_existing else ("conflict" if "existing" in status_lower or "another device" in status_lower else ("skip" if request is None else "ready"))
+            iid = self.tree.insert("", "end", values=(row.name, row.register, row.modbus_type, row.data_type, row.access, fc, rutos, server, item.status), tags=(tag,))
             self.plan_by_iid[iid] = index
-        self.info_var.set(f"Visible plan: {ready} ready, {skipped} skipped. Select rows to import; selected rows are compacted again during import.")
+        self.tree.tag_configure("ready", foreground="#176b2c")
+        self.tree.tag_configure("replace", foreground="#9a6500")
+        self.tree.tag_configure("conflict", foreground="#a32929")
+        self.tree.tag_configure("skip", foreground="#6a6a6a")
+        self.info_var.set(
+            f"Visible plan: {ready} ready ({replacements} replacements), {skipped} skipped, "
+            f"{conflicts} conflicts. Select ready rows to import."
+        )
         self.import_button.configure(state="normal" if ready else "disabled")
 
     def apply_filter(self):
