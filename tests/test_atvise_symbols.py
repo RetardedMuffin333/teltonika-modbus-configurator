@@ -108,6 +108,42 @@ def test_groups_symbols_by_source_device_and_supports_custom_group_names():
     )
 
 
+def test_exports_write_symbols_in_separate_device_write_group():
+    from teltonika_modbus_configurator.models import Device
+
+    read_mapping = _mapping("Temperature", 1025, "holding_register", "float32")
+    write_mapping = _mapping("Setpoint", 20000, "holding_register", "float32")
+    write_mapping.permissions = "w"
+    write_alias = _mapping("PumpCommand", 20002, "coil", "bool")
+    write_alias.permissions = "w"
+    write_alias.deploy = False
+
+    project = Project(
+        devices=[Device("D1", 1, "RS485", symbol_group="TP")],
+        mappings=[read_mapping, write_mapping, write_alias],
+    )
+
+    assert export_atvise_symbols(project) == (
+        "[]\n"
+        "[TP]\n"
+        "sym-Temperature=HRR1025,\n"
+        "[TP_w]\n"
+        "sym-Setpoint=HRR20000,\n"
+        "sym-PumpCommand=DA20002,\n"
+    )
+
+
+def test_write_only_device_does_not_create_empty_read_group():
+    mapping = _mapping("Setpoint", 20000, "holding_register", "float32")
+    mapping.permissions = "w"
+
+    assert export_atvise_symbols(Project(mappings=[mapping])) == (
+        "[]\n"
+        "[D1_w]\n"
+        "sym-Setpoint=HRR20000,\n"
+    )
+
+
 def test_can_export_legacy_flat_symbol_file():
     project = Project(mappings=[_mapping("Temperature", 1025, "holding_register")])
     assert export_atvise_symbols(project, group_by_device=False) == "[]\nsym-Temperature=HR1025,\n"
