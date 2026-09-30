@@ -19,6 +19,8 @@ from .deploy import (
     save_local_backup,
 )
 from .gui import ProjectEditor, TextWindow
+from .gui_prompts import askstring_foreground
+from .preferences import load_last_gateway_host, save_last_gateway_host
 from .uci_generator import generate_uci
 from .validator import validate_project
 
@@ -104,16 +106,17 @@ class DeploymentEditor(ProjectEditor):
         menu.add_cascade(label="Deployment", menu=deploy)
 
     def _ssh_details(self):
-        host = simpledialog.askstring(
-            "TRB connection", "Host/IP:", initialvalue="10.33.22.1", parent=self
+        host = askstring_foreground(
+            self, "TRB connection", "Host/IP:", initialvalue=load_last_gateway_host()
         )
         if not host:
             return None
-        user = simpledialog.askstring(
-            "TRB connection", "SSH username:", initialvalue="root", parent=self
+        save_last_gateway_host(host)
+        user = askstring_foreground(
+            self, "TRB connection", "SSH username:", initialvalue="root"
         ) or "root"
-        password = simpledialog.askstring(
-            "TRB connection", "SSH password:", show="*", parent=self
+        password = askstring_foreground(
+            self, "TRB connection", "SSH password:", show="*"
         )
         if password is None:
             return None
