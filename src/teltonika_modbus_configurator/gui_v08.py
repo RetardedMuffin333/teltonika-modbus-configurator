@@ -13,6 +13,11 @@ from .validator import validate_project
 
 
 class V08ProjectEditor(V06ProjectEditor):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.geometry("1360x840")
+        self.minsize(1080, 680)
+
     def _build_devices_tab(self):
         super()._build_devices_tab()
         self._configure_grouped_request_tree(self.requests_tree)
@@ -27,6 +32,9 @@ class V08ProjectEditor(V06ProjectEditor):
         tree.heading("#0", text="")
         tree.column("#0", width=28, minwidth=28, stretch=False)
         tree.tag_configure("symbol_alias", foreground="#245b8a")
+        tree.tag_configure("read_group", foreground="#245b8a")
+        tree.tag_configure("write_group", foreground="#7a3f88")
+        tree.tag_configure("write_request", foreground="#7a3f88")
 
     def _refresh_grouped_requests(self, tree, *, device_name, requests):
         opened = {iid for iid in tree.get_children("") if tree.item(iid, "open")}
@@ -43,7 +51,8 @@ class V08ProjectEditor(V06ProjectEditor):
                 continue
             tree.insert(
                 "", "end", iid=group_iid, open=(group_iid in opened or not opened),
-                values=(label, "", "", "", "", "", ""),
+                values=(f"{label} ({len(group_requests)})", "", "", "", "", "", ""),
+                tags=("read_group" if group_iid.endswith("read") else "write_group",),
             )
             for index, request in group_requests:
                 count_or_values = request.values if request.function.is_write else request.count
@@ -52,6 +61,7 @@ class V08ProjectEditor(V06ProjectEditor):
                     group_iid, "end", iid=str(index),
                     values=(request.name, int(request.function), request.register, count_or_values,
                             dtype, request.byte_order, enabled_mark(request.enabled)),
+                    tags=("write_request",) if request.function.is_write else (),
                 )
                 aliases = [
                     mapping for mapping in self.project.mappings
@@ -87,14 +97,28 @@ class V08ProjectEditor(V06ProjectEditor):
             self.tcp_client_requests_tree, device_name=device.name, requests=device.requests,
         )
 
+    def refresh_all(self):
+        super().refresh_all()
+        if not hasattr(self, "project_summary"):
+            return
+        requests = [
+            request
+            for device in (*self.project.devices, *self.project.tcp_clients)
+            for request in device.requests
+        ]
+        physical_mappings = sum(mapping.deploy for mapping in self.project.mappings)
+        aliases = len(self.project.mappings) - physical_mappings
+        self.project_summary.set(
+            f"{len(self.project.devices)} RTU device(s)  •  "
+            f"{len(self.project.tcp_clients)} TCP device(s)  •  "
+            f"{len(requests)} request(s)  •  "
+            f"{physical_mappings} server mapping(s)  •  {aliases} symbol alias(es)"
+        )
+
     def validate_project(self):
         messages = validate_project(self.project)
-        if not messages:
-            messagebox.showinfo("Validation", "Validation PASS - no errors found.", parent=self)
-            self.status.set("Validation PASS")
-            return True
         ValidationResultsWindow(self, messages)
-        self.status.set(f"Validation returned {len(messages)} message(s)")
+        self.status.set("Validation PASS" if not messages else f"Validation returned {len(messages)} message(s)")
         return not any(message.level == "error" for message in messages)
 
     def _build_menu(self):
