@@ -31,6 +31,11 @@ STOP_BITS = (1, 2)
 PARITIES = ("none", "even", "odd", "mark", "space")
 
 
+def enabled_mark(value: bool) -> str:
+    """Compact enabled-state marker used in read-only project tables."""
+    return "☑" if value else "☐"
+
+
 class FormDialog(simpledialog.Dialog):
     """Small reusable modal form for primitive project objects."""
 
@@ -299,7 +304,7 @@ class ProjectEditor(tk.Tk):
         selected = self.devices_tree.selection()
         self._clear(self.devices_tree)
         for i, d in enumerate(self.project.devices):
-            self.devices_tree.insert("", "end", iid=str(i), values=(d.name, d.slave_id, d.connection, d.period, d.timeout, "Yes" if d.enabled else "No"))
+            self.devices_tree.insert("", "end", iid=str(i), values=(d.name, d.slave_id, d.connection, d.period, d.timeout, enabled_mark(d.enabled)))
         if selected and selected[0] in self.devices_tree.get_children():
             self.devices_tree.selection_set(selected[0])
 
@@ -313,14 +318,14 @@ class ProjectEditor(tk.Tk):
         if idx is None or idx >= len(self.project.devices):
             return
         for i, r in enumerate(self.project.devices[idx].requests):
-            self.requests_tree.insert("", "end", iid=str(i), values=(r.name, int(r.function), r.register, r.count, r.data_type, r.byte_order, "Yes" if r.enabled else "No"))
+            self.requests_tree.insert("", "end", iid=str(i), values=(r.name, int(r.function), r.register, r.count, r.data_type, r.byte_order, enabled_mark(r.enabled)))
 
     def refresh_mappings(self):
         self._clear(self.mappings_tree)
         for i, m in enumerate(self.project.mappings):
             if not m.deploy:
                 continue
-            self.mappings_tree.insert("", "end", iid=str(i), values=(m.name, m.device, m.request, m.register_type, m.register, "Yes" if m.enabled else "No"))
+            self.mappings_tree.insert("", "end", iid=str(i), values=(m.name, m.device, m.request, m.register_type, m.register, enabled_mark(m.enabled)))
 
     def new_project(self):
         self.project = Project()

@@ -28,7 +28,7 @@ TCP devices --- Ethernet -/       |
 - Width-aware address allocation and collision detection.
 - Automatic batching for large read lists.
 - Separate feedback and SCADA command paths.
-- Carel cDesign and generic XLS/XLSX/CSV register-table import.
+- Carel cDesign XLS/XLSX/CSV register-table import.
 - atvise Connect `.Symbol` import and export.
 - Bulk generation of repeated RTU or TCP devices.
 - YAML project save/load.
@@ -167,18 +167,17 @@ Do not manually add individual mappings for symbols already represented by a bat
 
 ## Carel cDesign import
 
-Open **Import → Register table (XLS/XLSX/CSV)...** or the Carel-specific menu entry:
+Open **Import → Carel cDesign table (XLS/XLSX/CSV)...**:
 
-1. Select **Carel cDesign**.
-2. Select the existing target Modbus TCP client.
-3. Keep **Carel Index + 1 for RutOS request address** enabled for the tested Carel export.
-4. Set the TCP Server mapping start; `1025` is the normal read default.
-5. Select **Batched (recommended)**.
-6. Build the import plan.
-7. Review skipped/invalid rows, datatypes, directions, and addresses.
-8. Select the required rows and import them.
-9. Create write companions only for variables that genuinely need SCADA write access.
-10. Validate the project.
+1. Select the existing target Modbus RTU device or TCP client.
+2. Keep **Carel Index + 1 for RutOS request address** enabled for the tested Carel export.
+3. Set the TCP Server mapping start; `1025` is the normal read default.
+4. Select **Batched (recommended)**.
+5. Build the import plan.
+6. Review skipped/invalid rows, datatypes, directions, and addresses.
+7. Select the required rows and import them.
+8. Create write companions only for variables that genuinely need SCADA write access.
+9. Validate the project.
 
 Recognized columns include:
 
@@ -189,21 +188,6 @@ Types | Index | Size | Variable Name | DataType | Direction
 Common supported types include `Bool`, `USInt`, `SInt`, `UInt`, `Int`, `UDInt`, `DInt`, and `Real/FLOAT32`. Unknown types are skipped rather than guessed.
 
 The `Index + 1` rule is a Carel profile default, not a global Modbus rule. Confirm it for other Carel exports or firmware.
-
-## Generic register-table import
-
-Select **Generic Modbus table** for non-Carel XLS/XLSX/CSV files. Common headers include:
-
-```text
-Name / Point / Tag
-Register / Address / Offset
-Area / Memory / Register Type
-Data Type / Encoding
-Access / Rights
-Count / Words
-```
-
-The generic profile keeps addresses unchanged by default. Confirm whether the source document uses zero-based, one-based, or `4xxxx` notation.
 
 ## atvise Connect Symbol import
 

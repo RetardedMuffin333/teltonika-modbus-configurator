@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .atvise_symbols import export_atvise_symbols
-from .gui import FormDialog, vars_for
+from .gui import FormDialog, enabled_mark, vars_for
 from .gui_bulk import BulkGeneratorWindow
 from .gui_deploy import DeploymentEditor
 from .mapping_lifecycle import (
@@ -129,7 +129,7 @@ class ExtendedProjectEditor(DeploymentEditor):
         for i, r in enumerate(self.project.devices[idx].requests):
             cv = r.values if r.function.is_write else r.count
             dtype = r.raw_data_type or r.data_type
-            self.requests_tree.insert("", "end", iid=str(i), values=(r.name, int(r.function), r.register, cv, dtype, r.byte_order, "Yes" if r.enabled else "No"))
+            self.requests_tree.insert("", "end", iid=str(i), values=(r.name, int(r.function), r.register, cv, dtype, r.byte_order, enabled_mark(r.enabled)))
 
     def selected_tcp_client_index(self):
         sel = self.tcp_clients_tree.selection()
@@ -139,7 +139,7 @@ class ExtendedProjectEditor(DeploymentEditor):
         selected = self.tcp_clients_tree.selection()
         self._clear(self.tcp_clients_tree)
         for i, d in enumerate(self.project.tcp_clients):
-            self.tcp_clients_tree.insert("", "end", iid=str(i), values=(d.name, d.host, d.port, d.unit_id, d.period, d.timeout, "Yes" if d.enabled else "No"))
+            self.tcp_clients_tree.insert("", "end", iid=str(i), values=(d.name, d.host, d.port, d.unit_id, d.period, d.timeout, enabled_mark(d.enabled)))
         if selected and selected[0] in self.tcp_clients_tree.get_children():
             self.tcp_clients_tree.selection_set(selected[0])
 
@@ -150,7 +150,7 @@ class ExtendedProjectEditor(DeploymentEditor):
         for i, r in enumerate(self.project.tcp_clients[idx].requests):
             cv = r.values if r.function.is_write else r.count
             dtype = r.raw_data_type or r.data_type
-            self.tcp_client_requests_tree.insert("", "end", iid=str(i), values=(r.name, int(r.function), r.register, cv, dtype, r.byte_order, "Yes" if r.enabled else "No"))
+            self.tcp_client_requests_tree.insert("", "end", iid=str(i), values=(r.name, int(r.function), r.register, cv, dtype, r.byte_order, enabled_mark(r.enabled)))
 
     def _tcp_client_dialog(self, initial=None):
         dlg = FormDialog(self, "Modbus TCP Client", [
@@ -208,7 +208,7 @@ class ExtendedProjectEditor(DeploymentEditor):
                 continue
             request = self._request_for_mapping(m.device, m.request)
             access = permissions_for_function(request.function) if request else m.permissions
-            self.mappings_tree.insert("", "end", iid=str(i), values=(m.name, m.device, m.request, m.register_type, m.register, access, m.data_type, m.count, "Yes" if m.enabled else "No"))
+            self.mappings_tree.insert("", "end", iid=str(i), values=(m.name, m.device, m.request, m.register_type, m.register, access, m.data_type, m.count, enabled_mark(m.enabled)))
 
     def _request_dialog(self, initial=None):
         initial = dict(initial or {})
@@ -239,7 +239,9 @@ class ExtendedProjectEditor(DeploymentEditor):
     def edit_request(self):
         di = self.selected_device_index(); sel = self.requests_tree.selection()
         if di is None or not sel: return
-        ri = int(sel[0]); r = self.project.devices[di].requests[ri]
+        try: ri = int(sel[0])
+        except ValueError: return
+        r = self.project.devices[di].requests[ri]
         initial = vars_for(r) | {"function": _fc_text(r.function), "values": r.values or ""}
         if r.raw_data_type:
             messagebox.showerror("Raw RutOS datatype", "This imported request uses an unrecognized raw RutOS datatype token. It is preserved losslessly but is not editable yet.", parent=self); return
@@ -266,7 +268,9 @@ class ExtendedProjectEditor(DeploymentEditor):
     def edit_tcp_client_request(self):
         di = self.selected_tcp_client_index(); sel = self.tcp_client_requests_tree.selection()
         if di is None or not sel: return
-        ri = int(sel[0]); r = self.project.tcp_clients[di].requests[ri]
+        try: ri = int(sel[0])
+        except ValueError: return
+        r = self.project.tcp_clients[di].requests[ri]
         if r.raw_data_type:
             messagebox.showerror("Raw RutOS datatype", "This imported request uses an unrecognized raw RutOS datatype token. It is preserved losslessly but is not editable yet.", parent=self); return
         initial = vars_for(r) | {"function": _fc_text(r.function), "values": r.values or ""}
