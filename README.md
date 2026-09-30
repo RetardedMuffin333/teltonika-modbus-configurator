@@ -1,5 +1,7 @@
 # Teltonika Modbus Configurator
 
+**Current stable version: 0.8.0 (2026-09-30).** This is the completed baseline for daily internal use. The workflow is documented below; see [v0.8.0 release notes](RELEASE_NOTES_0.8.0.md) for the release summary. Further improvements will be planned from field feedback after one to two months of use.
+
 > **Unofficial project.** This is an independent open-source tool and is not affiliated with, endorsed by, or maintained by Teltonika Networks.
 
 Teltonika Modbus Configurator is a desktop application for building, validating, testing, and deploying larger RutOS Modbus configurations. It is intended for installations where manually creating hundreds of Modbus requests, TCP Server mappings, and atvise Connect symbols would be slow and error-prone.
