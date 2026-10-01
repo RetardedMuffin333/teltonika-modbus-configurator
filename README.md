@@ -21,6 +21,18 @@ TCP devices --- Ethernet -/       |
                          atvise Connect / SCADA
 ```
 
+## TL;DR — daily workflow
+
+1. **Open/create the project:** open your saved YAML, use **File → First Project Wizard...** for a new setup, or **File → Import live TRB...** for an existing gateway. Save a YAML copy before editing.
+2. **Check the gateway:** run **Deployment → Gateway preflight...** before the first live session or after firmware/package changes; resolve errors and review warnings.
+3. **Prepare requests and mappings:** import a Carel table or atvise `.Symbol` file, select the correct RTU/TCP device, check addressing and datatypes, and **Build import plan**. Prefer **Batched**; review conflicts and run **Scan proposed batches** before importing.
+4. **Check and save:** inspect batch contents and server mappings, run **Validate**, resolve errors, and save the finished YAML. Keep generated SCADA write requests **disabled** to prevent cyclic writes.
+5. **Review and deploy:** use **Preview UCI**, then **Deployment → Preview live diff...**. When the changes are correct, use **Apply to live TRB...**, review the final diff, and click **Confirm and apply to TRB**.
+6. **Verify live communication:** open **Tools → Live Modbus Tester...**, run **Scan Device** or **Configured Read**, and test required writes with feedback/readback.
+7. **Export and hand over:** use **Export → atvise Connect Symbol file...**, import it into atvise Connect, and verify SCADA values. Archive the final YAML, `.Symbol`, **Project Report**, and recovery snapshot information.
+
+For later changes, start from the saved YAML and repeat the relevant steps.
+
 ## What the configurator provides
 
 - Modbus RTU and Modbus TCP Client devices in the same project.
