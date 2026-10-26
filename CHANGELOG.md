@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Windows x64 portable ZIP build with bundled Python dependencies, windowed launcher, rotating error log, quick-start guide, examples, checksum, and frozen GUI smoke check.
+- Windows GitHub Actions build and downloadable portable artifacts.
+
 ## [0.8.0] - 2026-09-30
 
 Eighth release baseline, focused on guided project creation, safe read/write batching, pre-import hardware verification, polished operator workflows, and colleague-ready commissioning documentation.

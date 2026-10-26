@@ -1,0 +1,8 @@
+# Windows x64 / Python 3.12 build inputs. Update deliberately and re-test the ZIP.
+PyInstaller==6.16.0
+PyYAML==6.0.3
+paramiko==4.0.0
+requests==2.32.5
+xlrd==2.0.2
+openpyxl==3.1.5
+pytest==8.4.2
