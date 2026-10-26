@@ -1,0 +1,48 @@
+name: Windows portable
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'feature/windows-portable']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: packaging/requirements-windows.txt
+      - name: Install build dependencies
+        run: |
+          python -m pip install -r packaging/requirements-windows.txt
+          python -m pip install --no-deps -e .
+      - name: Run regression tests
+        run: python -m pytest -q
+      - name: Build and smoke-test frozen application
+        run: python scripts/build_windows_portable.py
+      - name: Upload portable ZIP and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: TeltonikaModbusConfigurator-windows-x64-portable
+          path: |
+            dist/*-windows-x64-portable.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload diagnostic logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable-build-diagnostics
+          path: |
+            ~/AppData/Local/Teltonika Modbus Configurator/logs/*.log
+            build/pyinstaller/**/*.txt
+          if-no-files-found: ignore

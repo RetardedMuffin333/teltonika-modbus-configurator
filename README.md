@@ -53,7 +53,38 @@ For later changes, start from the saved YAML and repeat the relevant steps.
 - Guided first-project wizard, structured validation results, import previews, and conflict handling.
 - A shareable project report with batching, workload, address-block, validation, and safety summaries.
 
-## Installation
+## Windows portable ZIP (no installation)
+
+Download the ZIP from the latest successful **Windows portable** run under
+[GitHub Actions](https://github.com/RetardedMuffin333/teltonika-modbus-configurator/actions/workflows/windows-portable.yml).
+Open the run, then download **TeltonikaModbusConfigurator-windows-x64-portable** under **Artifacts**
+(GitHub sign-in may be required). Extract the artifact, then extract the contained portable ZIP.
+Open the application folder and run **TeltonikaModbusConfigurator.exe**.
+Keep the complete folder, including `_internal`; Python and Git are not required.
+Read `START_HERE.txt` for the short guide. This package targets Windows x64.
+
+Settings and logs live in `%LOCALAPPDATA%\Teltonika Modbus Configurator`.
+Save site YAML projects outside the application folder. To upgrade, close the app,
+extract the new package to a new folder, and reopen the saved YAML.
+The ZIP includes a SHA-256 checksum, examples, and the full operating guide.
+The first packaged build still requires the Windows/real-gateway checks listed in `START_HERE.txt`.
+
+### Building the portable package
+
+On Windows x64 with Python 3.12, from the repository root:
+
+```powershell
+py -3.12 -m venv .venv-build
+.\.venv-build\Scripts\python.exe -m pip install -r packaging/requirements-windows.txt
+.\.venv-build\Scripts\python.exe -m pip install --no-deps -e .
+.\.venv-build\Scripts\python.exe -m pytest -q
+.\.venv-build\Scripts\python.exe scripts/build_windows_portable.py
+```
+
+The build smoke-tests the frozen GUI and creates the ZIP and checksum in `dist/`.
+GitHub Actions runs the same process on Windows. No installer is produced.
+
+## Installation from source (development)
 
 Python 3.11 or newer and Git are required.
 
@@ -490,7 +521,7 @@ Earlier versions were also tested on a TRB145 running RutOS 7.24.2.
 
 ## Known limitations
 
-- No standalone Windows installer yet; installation uses Python/pip.
+- No Windows installer; use the portable ZIP or install from source with Python/pip.
 - 64-bit RutOS datatypes are deferred until exact tokens are verified.
 - Unknown vendor datatypes are skipped rather than guessed.
 - Carel `Direction` metadata alone does not authorize a write path; select writable targets deliberately.
